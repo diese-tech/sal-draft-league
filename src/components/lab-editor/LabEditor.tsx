@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { DraftPlayerCard } from "@/components/card-lab/DraftPlayerCard";
 import { OrgRosterCard } from "@/components/card-lab/OrgRosterCard";
 import { PlayerProfileCard } from "@/components/card-lab/PlayerProfileCard";
@@ -22,15 +22,32 @@ type UpdateSection = <Section extends keyof LabEditorConfig, Key extends keyof L
   value: LabEditorConfig[Section][Key],
 ) => void;
 
+type CanvasSize = "preview" | "1920x1080" | "1280x720";
+
 export function LabEditor() {
   const [config, setConfig] = useState<LabEditorConfig>(readStoredConfig);
   const [jsonDraft, setJsonDraft] = useState("");
   const [jsonMessage, setJsonMessage] = useState(readStoredMessage);
   const [buttonMessage, setButtonMessage] = useState("No preview action clicked yet.");
+  const [canvasSize, setCanvasSize] = useState<CanvasSize>("preview");
+  const [canvasScale, setCanvasScale] = useState(1);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     window.localStorage.setItem(storageKey, JSON.stringify(config));
   }, [config]);
+
+  useEffect(() => {
+    if (canvasSize === "preview") return;
+    const el = canvasContainerRef.current;
+    if (!el) return;
+    const targetWidth = canvasSize === "1920x1080" ? 1920 : 1280;
+    const update = () => setCanvasScale(el.getBoundingClientRect().width / targetWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [canvasSize]);
 
   const configJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
   const boardOrgs = useMemo(() => buildBoardOrgs(config), [config]);
@@ -259,6 +276,32 @@ export function LabEditor() {
                   <BoardControls config={config} updateSection={updateSection} />
                 </InlineControls>
                 <div className="min-w-0">
+                  {/* Canvas size toggle */}
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-black uppercase text-slate-400">Preview mode</span>
+                    {(["preview", "1920x1080", "1280x720"] as CanvasSize[]).map((size) => (
+                      <button
+                        key={size}
+                        onClick={() => setCanvasSize(size)}
+                        className={cn(
+                          "rounded-lg border px-3 py-1.5 text-xs font-black uppercase transition",
+                          canvasSize === size
+                            ? "border-cyan-300/40 bg-cyan-300/15 text-cyan-100"
+                            : "border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-slate-200",
+                        )}
+                      >
+                        {size === "preview" ? "Editor" : size}
+                      </button>
+                    ))}
+                    {canvasSize !== "preview" && (
+                      <span className="ml-1 text-[0.65rem] font-bold text-slate-500">
+                        Scale {(canvasScale * 100).toFixed(0)}% — showing {canvasSize} stream canvas
+                      </span>
+                    )}
+                  </div>
+
+                  {canvasSize === "preview" ? (
+                    <>
                   {config.board.showTopBanner ? (
                 <PreviewTarget label="Draft top banner" affectedBy="Board controls: top banner toggle and active team index">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-orange-300/25 bg-orange-400/10 px-4 py-3">
@@ -310,6 +353,17 @@ export function LabEditor() {
                 </div>
                 </PreviewTarget>
                   ) : null}
+                    </>
+                  ) : (
+                    <BoardCanvas
+                      config={config}
+                      boardOrgs={boardOrgs}
+                      canvasSize={canvasSize}
+                      canvasScale={canvasScale}
+                      containerRef={canvasContainerRef}
+                      themeClass={themeClass}
+                    />
+                  )}
                 </div>
               </div>
             </PreviewPanel>
@@ -340,6 +394,110 @@ export function LabEditor() {
         </section>
       </div>
     </main>
+  );
+}
+
+function BoardCanvas({
+  config,
+  boardOrgs,
+  canvasSize,
+  canvasScale,
+  containerRef,
+  themeClass,
+}: {
+  config: LabEditorConfig;
+  boardOrgs: OrgRoster[];
+  canvasSize: Exclude<CanvasSize, "preview">;
+  canvasScale: number;
+  containerRef: RefObject<HTMLDivElement | null>;
+  themeClass: string;
+}) {
+  const canvasW = canvasSize === "1920x1080" ? 1920 : 1280;
+  const canvasH = canvasSize === "1920x1080" ? 1080 : 720;
+  const scaledH = Math.round(canvasH * canvasScale);
+
+  return (
+    <div
+      ref={containerRef}
+      className="w-full overflow-hidden rounded-2xl border border-white/15"
+      style={{ height: scaledH > 0 ? `${scaledH}px` : undefined }}
+    >
+      <div
+        className={cn("relative overflow-hidden", themeClass)}
+        style={{
+          width: `${canvasW}px`,
+          height: `${canvasH}px`,
+          transform: `scale(${canvasScale})`,
+          transformOrigin: "top left",
+        }}
+      >
+        {/* Background overlays matching the editor page */}
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-0",
+            config.theme.backgroundStyle === "grid" && "sal-grid",
+            config.theme.backgroundStyle === "smoke" &&
+              "bg-[radial-gradient(circle_at_20%_10%,rgba(34,211,238,0.16),transparent_28rem),radial-gradient(circle_at_80%_20%,rgba(251,146,60,0.12),transparent_30rem)]",
+          )}
+          style={{ opacity: config.theme.backgroundGridOpacity / 100 }}
+        />
+        <div
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_25%,rgba(0,0,0,0.72)_100%)]"
+          style={{ opacity: config.theme.backgroundVignetteStrength / 100 }}
+        />
+
+        {/* Stream content */}
+        <div className="relative flex h-full flex-col gap-4 p-8">
+          {config.board.showTopBanner ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-orange-300/25 bg-orange-400/10 px-6 py-4">
+              <div>
+                <p className="text-sm font-black uppercase text-orange-100">Round 2 Pick 9</p>
+                <p className="text-3xl font-black text-white">
+                  {boardOrgs[config.board.activeTeamIndex]?.name ?? "Active org"} is on the clock
+                </p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-3 font-mono text-2xl font-black text-white">01:24</div>
+            </div>
+          ) : null}
+
+          <div
+            className="flex-1 grid min-w-0"
+            style={{
+              gap: `${config.board.rowGap}px ${config.board.boardGap}px`,
+              gridTemplateColumns: getGridTemplateColumns(config),
+              maxWidth: `${config.board.boardMaxWidth}px`,
+              margin: "0 auto",
+              width: "100%",
+              transform: config.board.boardScale !== 1 ? `scale(${config.board.boardScale})` : undefined,
+              transformOrigin: "top center",
+            }}
+          >
+            {boardOrgs.map((org, index) => (
+              <div
+                key={`${org.id}-${index}`}
+                style={{
+                  opacity: index === config.board.activeTeamIndex ? 1 : config.board.inactiveCardOpacity / 100,
+                  transform: index === config.board.activeTeamIndex ? `scale(${config.board.activeCardScale})` : undefined,
+                }}
+              >
+                <OrgRosterCard org={org} editorConfig={config} />
+              </div>
+            ))}
+          </div>
+
+          {config.board.showRecentPicksWidget && config.board.viewMode !== "captain" ? (
+            <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/25 p-4" style={{ gridTemplateColumns: `repeat(${Math.min(players.length, 5)}, 1fr)` }}>
+              {players.slice(0, 5).map((player, index) => (
+                <div key={player.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
+                  <p className="text-xs font-black uppercase text-slate-500">Recent pick {index + 1}</p>
+                  <p className="mt-1 truncate text-lg font-black text-white">{player.ign}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 

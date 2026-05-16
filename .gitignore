@@ -8,6 +8,10 @@ out/
 # production
 build/
 
+# test artifacts
+test-results/
+playwright-report/
+
 # local env files
 .env*
 

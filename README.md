@@ -24,6 +24,12 @@ Open the Card Lab:
 http://localhost:3000/lab/cards
 ```
 
+Open the design editor:
+
+```text
+http://localhost:3000/lab/editor
+```
+
 Optional production-build verification:
 
 ```bash
@@ -51,7 +57,7 @@ SAL should feel like a premium live event board, not a spreadsheet, fantasy foot
 
 ## First Build Target
 
-Create `/lab/cards`, a component lab using mock data only.
+Create `/lab/cards`, a component lab using mock data only, and `/lab/editor`, a mock-data visual configuration lab for tuning SAL component styling without editing CSS or TSX.
 
 The Card Lab should explore:
 

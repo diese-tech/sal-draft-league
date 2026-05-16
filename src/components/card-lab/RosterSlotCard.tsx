@@ -1,9 +1,14 @@
 import { AvatarMark, RolePill } from "@/components/card-lab/ui";
 import type { RosterSlot } from "@/types/card-lab";
+import type { LabEditorConfig } from "@/types/lab-editor";
 import { cn } from "@/lib/utils";
 
-export function RosterSlotCard({ slot, compact = false }: { slot: RosterSlot; compact?: boolean }) {
+export function RosterSlotCard({ slot, compact = false, editorConfig }: { slot: RosterSlot; compact?: boolean; editorConfig?: LabEditorConfig }) {
   const player = slot.player ?? slot.projectedPlayer;
+  const slotConfig = editorConfig?.rosterSlot;
+  const showPickNumber = slotConfig?.showPickNumbers !== false;
+  const pulsePreset = slotConfig?.selectedSlotPulse === "off" ? 0 : slotConfig?.selectedSlotPulse === "strong" ? 1.35 : 1;
+  const pulseStrength = ((slotConfig?.selectedPulseStrength ?? 16) / 100) * pulsePreset;
 
   return (
     <div
@@ -14,10 +19,20 @@ export function RosterSlotCard({ slot, compact = false }: { slot: RosterSlot; co
         slot.state === "queued-ghost" && "border-dashed border-cyan-200/25 bg-cyan-200/[0.045] opacity-70",
         slot.state === "active" && "border-orange-300/55 bg-orange-400/10 shadow-[0_0_22px_rgba(251,146,60,0.16)]",
       )}
+      style={{
+        minHeight: slotConfig ? `${slotConfig.slotHeight}px` : undefined,
+        borderRadius: slotConfig ? `${slotConfig.slotRadius}px` : undefined,
+        padding: slotConfig ? `${slotConfig.slotPadding}px` : undefined,
+        opacity: slot.state === "queued-ghost" && slotConfig ? slotConfig.ghostOpacity / 100 : undefined,
+        boxShadow:
+          slot.state === "active" && slotConfig
+            ? `0 0 ${Math.round(44 * pulseStrength)}px rgba(251,146,60,${Math.max(0.08, pulseStrength * 0.45)})`
+            : undefined,
+      }}
     >
-      <div className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-black/25 text-xs font-black text-slate-300">
+      {showPickNumber ? <div className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-black/25 text-xs font-black text-slate-300" style={{ fontSize: slotConfig ? `${slotConfig.pickNumberSize}px` : undefined }}>
         {slot.pickNumber ?? slot.slotNumber}
-      </div>
+      </div> : null}
 
       {player ? (
         <>

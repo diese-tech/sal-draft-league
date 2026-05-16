@@ -1,5 +1,7 @@
 import type { PlayerRole, PlayerStatus } from "@/types/card-lab";
+import type { LabEditorConfig } from "@/types/lab-editor";
 import { cn } from "@/lib/utils";
+import type { CSSProperties } from "react";
 
 const roleStyles: Record<PlayerRole, string> = {
   Solo: "border-emerald-300/35 bg-emerald-300/10 text-emerald-100",
@@ -30,11 +32,25 @@ export function GlowPanel({
   children,
   className,
   active,
+  editorConfig,
+  style,
 }: {
   children: React.ReactNode;
   className?: string;
   active?: boolean;
+  editorConfig?: LabEditorConfig;
+  style?: CSSProperties;
 }) {
+  const theme = editorConfig?.theme;
+  const glowPreset = theme?.glowStrength === "none" ? 0 : theme?.glowStrength === "low" ? 0.45 : theme?.glowStrength === "high" ? 1.35 : theme?.glowStrength === "nuclear" ? 1.9 : 1;
+  const borderPreset = theme?.borderStrength === "none" ? 0 : theme?.borderStrength === "subtle" ? 0.45 : theme?.borderStrength === "bright" ? 1.7 : 1;
+  const motionPreset = theme?.animationIntensity === "none" ? 0 : theme?.animationIntensity === "subtle" ? 0.75 : theme?.animationIntensity === "flashy" ? 1.35 : 1;
+  const glowOpacity = Math.min(1, ((theme?.globalGlowOpacity ?? 80) / 100) * glowPreset);
+  const borderOpacity = Math.min(1, ((theme?.borderOpacity ?? 10) / 100) * borderPreset);
+  const motionDuration = Math.round((theme?.motionDuration ?? 300) * motionPreset);
+  const radius =
+    theme?.cornerStyle === "sharp" ? 8 : theme?.cornerStyle === "pillowy" ? 28 : undefined;
+
   return (
     <div
       className={cn(
@@ -43,8 +59,17 @@ export function GlowPanel({
         active && "border-orange-300/45 shadow-orange-500/15",
         className,
       )}
+      style={{
+        borderColor: theme ? `rgba(255,255,255,${Math.max(0.06, borderOpacity)})` : undefined,
+        borderRadius: radius,
+        transitionDuration: `${motionDuration}ms`,
+        ...style,
+      }}
     >
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.16),transparent_32%)] opacity-80" />
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.16),transparent_32%)] opacity-80"
+        style={{ opacity: theme ? glowOpacity : undefined }}
+      />
       {active ? (
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-orange-300 to-transparent" />
       ) : null}
@@ -84,10 +109,12 @@ export function AvatarMark({
   initials,
   gradient,
   className,
+  style,
 }: {
   initials: string;
   gradient: string;
   className?: string;
+  style?: CSSProperties;
 }) {
   return (
     <div
@@ -96,6 +123,7 @@ export function AvatarMark({
         gradient,
         className,
       )}
+      style={style}
     >
       {initials}
     </div>
@@ -106,10 +134,12 @@ export function OrgLogo({
   initials,
   gradient,
   className,
+  style,
 }: {
   initials: string;
   gradient: string;
   className?: string;
+  style?: CSSProperties;
 }) {
   return (
     <div
@@ -118,6 +148,7 @@ export function OrgLogo({
         gradient,
         className,
       )}
+      style={style}
     >
       {initials}
     </div>

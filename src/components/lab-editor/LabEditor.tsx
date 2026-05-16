@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { DraftPlayerCard } from "@/components/card-lab/DraftPlayerCard";
+import { GhostQueueCard } from "@/components/card-lab/GhostQueueCard";
 import { OrgRosterCard } from "@/components/card-lab/OrgRosterCard";
 import { PlayerProfileCard } from "@/components/card-lab/PlayerProfileCard";
 import { RosterSlotCard } from "@/components/card-lab/RosterSlotCard";
 import { SalButton } from "@/components/sal-ui/SalButton";
 import { labEditorDefaults } from "@/data/lab-editor-defaults";
 import { orgRosters, players, rosterSlotStates } from "@/data/mock-card-lab";
-import type { LabEditorConfig, CornerStyle } from "@/types/lab-editor";
+import type { LabEditorConfig, CornerStyle, GhostBorderStyle } from "@/types/lab-editor";
 import type { OrgRoster } from "@/types/card-lab";
 import { cn } from "@/lib/utils";
 
@@ -283,6 +284,22 @@ export function LabEditor() {
                       .map((slot) => (
                         <RosterSlotCard key={slot.slotNumber} slot={slot} editorConfig={config} />
                       ))}
+                  </div>
+                </PreviewTarget>
+              </div>
+            </PreviewPanel>
+
+            <PreviewPanel eyebrow="Ghost Queue" title="Private queue preview cards" tunedBy={["Ghost Queue", "Theme"]} collapsed={collapsedSections.has("Ghost Queue")} onToggle={() => toggleSectionCollapse("Ghost Queue")}>
+              <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
+                <InlineControls title="Ghost queue controls">
+                  <GhostQueueControls config={config} updateSection={updateSection} />
+                </InlineControls>
+                <PreviewTarget label="Ghost queue cards" affectedBy="Ghost Queue controls: opacity, hover opacity, position badge, roles, subtext, avatar size, radius, padding, border style">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <GhostQueueCard player={players[4]} queuePosition={1} editorConfig={config} />
+                    <GhostQueueCard player={players[0]} queuePosition={2} editorConfig={config} />
+                    <GhostQueueCard player={players[2]} queuePosition={3} editorConfig={config} />
+                    <GhostQueueCard player={players[1]} queuePosition={4} editorConfig={config} />
                   </div>
                 </PreviewTarget>
               </div>
@@ -657,6 +674,25 @@ function OrgCardControls({ config, updateSection }: { config: LabEditorConfig; u
   );
 }
 
+function GhostQueueControls({ config, updateSection }: { config: LabEditorConfig; updateSection: UpdateSection }) {
+  return (
+    <>
+      <ControlDivider label="Visibility" />
+      <ToggleRow label="Position badge" value={config.ghostQueue.showPosition} onChange={(value) => updateSection("ghostQueue", "showPosition", value)} />
+      <ToggleRow label="Role pills" value={config.ghostQueue.showRoles} onChange={(value) => updateSection("ghostQueue", "showRoles", value)} />
+      <ToggleRow label="Subtext" value={config.ghostQueue.showSubtext} onChange={(value) => updateSection("ghostQueue", "showSubtext", value)} />
+      <ControlDivider label="Opacity" />
+      <Slider label="Card opacity" value={config.ghostQueue.cardOpacity} min={10} max={100} suffix="%" onChange={(value) => updateSection("ghostQueue", "cardOpacity", value)} />
+      <Slider label="Hover opacity" value={config.ghostQueue.hoverOpacity} min={10} max={100} suffix="%" onChange={(value) => updateSection("ghostQueue", "hoverOpacity", value)} />
+      <ControlDivider label="Shape & size" />
+      <SelectControl label="Border style" value={config.ghostQueue.borderStyle} options={["dashed", "solid", "none"] as GhostBorderStyle[]} onChange={(value) => updateSection("ghostQueue", "borderStyle", value)} />
+      <Slider label="Card radius" value={config.ghostQueue.cardRadius} min={4} max={32} suffix="px" onChange={(value) => updateSection("ghostQueue", "cardRadius", value)} />
+      <Slider label="Card padding" value={config.ghostQueue.cardPadding} min={8} max={28} suffix="px" onChange={(value) => updateSection("ghostQueue", "cardPadding", value)} />
+      <Slider label="Avatar size" value={config.ghostQueue.avatarSize} min={32} max={80} suffix="px" onChange={(value) => updateSection("ghostQueue", "avatarSize", value)} />
+    </>
+  );
+}
+
 function BoardControls({ config, updateSection }: { config: LabEditorConfig; updateSection: UpdateSection }) {
   return (
     <>
@@ -830,6 +866,7 @@ function mergeConfig(value: unknown): LabEditorConfig {
     board: { ...labEditorDefaults.board, ...(next.board ?? {}) },
     theme: { ...labEditorDefaults.theme, ...(next.theme ?? {}) },
     button: { ...labEditorDefaults.button, ...(next.button ?? {}) },
+    ghostQueue: { ...labEditorDefaults.ghostQueue, ...(next.ghostQueue ?? {}) },
   };
 }
 

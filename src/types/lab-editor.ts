@@ -115,6 +115,20 @@ export type ButtonEditorConfig = {
   disabledOpacity: number;
 };
 
+export type GhostBorderStyle = "dashed" | "solid" | "none";
+
+export type GhostQueueEditorConfig = {
+  cardOpacity: number;
+  hoverOpacity: number;
+  showPosition: boolean;
+  showRoles: boolean;
+  showSubtext: boolean;
+  avatarSize: number;
+  cardRadius: number;
+  cardPadding: number;
+  borderStyle: GhostBorderStyle;
+};
+
 export type LabEditorConfig = {
   playerCard: PlayerCardEditorConfig;
   rosterSlot: RosterSlotEditorConfig;
@@ -122,4 +136,5 @@ export type LabEditorConfig = {
   board: BoardEditorConfig;
   theme: ThemeEditorConfig;
   button: ButtonEditorConfig;
+  ghostQueue: GhostQueueEditorConfig;
 };

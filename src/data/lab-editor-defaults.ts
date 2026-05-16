@@ -92,4 +92,15 @@ export const labEditorDefaults: LabEditorConfig = {
     pressScale: 0.97,
     disabledOpacity: 45,
   },
+  ghostQueue: {
+    cardOpacity: 75,
+    hoverOpacity: 90,
+    showPosition: true,
+    showRoles: true,
+    showSubtext: true,
+    avatarSize: 56,
+    cardRadius: 16,
+    cardPadding: 16,
+    borderStyle: "dashed",
+  },
 };

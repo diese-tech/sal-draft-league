@@ -23,44 +23,14 @@ type UpdateSection = <Section extends keyof LabEditorConfig, Key extends keyof L
 ) => void;
 
 export function LabEditor() {
-  const [config, setConfig] = useState<LabEditorConfig>(labEditorDefaults);
-  const [isHydrated, setIsHydrated] = useState(false);
+  const [config, setConfig] = useState<LabEditorConfig>(readStoredConfig);
   const [jsonDraft, setJsonDraft] = useState("");
-  const [jsonMessage, setJsonMessage] = useState("Loading local design config...");
+  const [jsonMessage, setJsonMessage] = useState(readStoredMessage);
   const [buttonMessage, setButtonMessage] = useState("No preview action clicked yet.");
 
   useEffect(() => {
-    let isActive = true;
-
-    queueMicrotask(() => {
-      if (!isActive) return;
-
-      const stored = window.localStorage.getItem(storageKey);
-
-      if (stored) {
-        try {
-          setConfig(mergeConfig(JSON.parse(stored)));
-          setJsonMessage("Restored saved local config.");
-        } catch {
-          setJsonMessage("Saved config could not be read, using defaults.");
-        }
-      } else {
-        setJsonMessage("Local changes autosave in this browser.");
-      }
-
-      setIsHydrated(true);
-    });
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isHydrated) return;
-
     window.localStorage.setItem(storageKey, JSON.stringify(config));
-  }, [config, isHydrated]);
+  }, [config]);
 
   const configJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
   const boardOrgs = useMemo(() => buildBoardOrgs(config), [config]);
@@ -670,4 +640,27 @@ function getPreviewPanelGapClass(config: LabEditorConfig) {
   if (config.theme.spacing === "compact") return "gap-3";
   if (config.theme.spacing === "cinematic") return "gap-8";
   return "gap-5";
+}
+
+function readStoredConfig(): LabEditorConfig {
+  if (typeof window === "undefined") return labEditorDefaults;
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored) return mergeConfig(JSON.parse(stored));
+  } catch {}
+  return labEditorDefaults;
+}
+
+function readStoredMessage(): string {
+  if (typeof window === "undefined") return "Local changes autosave in this browser.";
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored) {
+      JSON.parse(stored);
+      return "Restored saved local config.";
+    }
+  } catch {
+    return "Saved config could not be read, using defaults.";
+  }
+  return "Local changes autosave in this browser.";
 }

@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { AvatarMark, RolePill } from "@/components/card-lab/ui";
 import type { PlayerProfile } from "@/types/card-lab";

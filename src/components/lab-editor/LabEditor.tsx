@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DraftPlayerCard } from "@/components/card-lab/DraftPlayerCard";
 import { GhostQueueCard } from "@/components/card-lab/GhostQueueCard";
 import { OrgRosterCard } from "@/components/card-lab/OrgRosterCard";
@@ -8,20 +8,48 @@ import { PlayerProfileCard } from "@/components/card-lab/PlayerProfileCard";
 import { RosterSlotCard } from "@/components/card-lab/RosterSlotCard";
 import { SalButton } from "@/components/sal-ui/SalButton";
 import { labEditorDefaults } from "@/data/lab-editor-defaults";
-import { orgRosters, players, rosterSlotStates } from "@/data/mock-card-lab";
-import type { LabEditorConfig, CornerStyle, GhostBorderStyle, LayoutPreset } from "@/types/lab-editor";
-import type { OrgRoster } from "@/types/card-lab";
+import { players, rosterSlotStates } from "@/data/mock-card-lab";
+import type {
+  AnimationIntensity,
+  BorderStrength,
+  CornerStyle,
+  GlowStrength,
+  LabEditorConfig,
+  UpdateSection,
+} from "@/types/lab-editor";
 import { cn } from "@/lib/utils";
+import {
+  buildBoardOrgs,
+  getBoardRows,
+  getBorderPreset,
+  getCornerStylePresets,
+  getGlowPreset,
+  getMotionPreset,
+  getPreviewPanelGapClass,
+  getThemeClass,
+  getThemeRadius,
+  mergeConfig,
+  readStoredConfig,
+  readStoredMessage,
+  sliceBoardRows,
+} from "@/lib/lab-utils";
+import {
+  PreviewPanel,
+  PreviewTarget,
+  InlineControls,
+} from "@/components/lab-editor/primitives";
+import { BoardCanvas } from "@/components/lab-editor/BoardCanvas";
+import { PlayerCardControls } from "@/components/lab-editor/controls/PlayerCardControls";
+import { RosterSlotControls } from "@/components/lab-editor/controls/RosterSlotControls";
+import { OrgCardControls } from "@/components/lab-editor/controls/OrgCardControls";
+import { GhostQueueControls } from "@/components/lab-editor/controls/GhostQueueControls";
+import { BoardControls } from "@/components/lab-editor/controls/BoardControls";
+import { ThemeControls } from "@/components/lab-editor/controls/ThemeControls";
+import { ButtonControls } from "@/components/lab-editor/controls/ButtonControls";
 
 const storageKey = "sal-lab-editor-config";
 const utilityButtonClass =
   "cursor-pointer rounded-xl border px-3 py-2 text-xs font-black uppercase transition hover:brightness-110 active:translate-y-0.5 active:scale-95 active:brightness-125 active:saturate-150 active:[box-shadow:inset_0_2px_14px_rgba(0,0,0,0.5)]";
-
-type UpdateSection = <Section extends keyof LabEditorConfig, Key extends keyof LabEditorConfig[Section]>(
-  section: Section,
-  key: Key,
-  value: LabEditorConfig[Section][Key],
-) => void;
 
 type CanvasSize = "preview" | "1920x1080" | "1280x720";
 
@@ -38,6 +66,8 @@ export function LabEditor() {
   const boardContentRef = useRef<HTMLDivElement>(null);
   const [fitScale, setFitScale] = useState(1);
   const [boardNaturalHeight, setBoardNaturalHeight] = useState(600);
+  const prevConfigRef = useRef<LabEditorConfig | null>(null);
+  const [, forceRender] = useState(0);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set<string>();
     try {
@@ -97,29 +127,57 @@ export function LabEditor() {
   const previewPanelGapClass = getPreviewPanelGapClass(config);
   const effectivePreviewScale = previewZoom === "fit" ? fitScale : (previewZoom as number);
 
-  function updateSection<Section extends keyof LabEditorConfig, Key extends keyof LabEditorConfig[Section]>(
-    section: Section,
-    key: Key,
-    value: LabEditorConfig[Section][Key],
-  ) {
+  const updateSection: UpdateSection = (section, key, value) => {
     setConfig((current) => ({
       ...current,
-      [section]: {
-        ...current[section],
-        [key]: value,
-      },
+      [section]: { ...current[section], [key]: value },
     }));
-  }
+  };
 
   function handleCornerStyleChange(value: CornerStyle) {
     const presets = getCornerStylePresets(value);
     setConfig((current) => ({
       ...current,
-      theme: { ...current.theme, cornerStyle: value },
-      playerCard: { ...current.playerCard, cardRadius: presets.cardRadius },
-      orgCard: { ...current.orgCard, orgCardRadius: presets.orgCardRadius },
-      rosterSlot: { ...current.rosterSlot, slotRadius: presets.slotRadius },
-      button: { ...current.button, buttonRadius: presets.buttonRadius },
+      theme:      { ...current.theme,      cornerStyle:    value               },
+      playerCard: { ...current.playerCard, cardRadius:     presets.cardRadius   },
+      orgCard:    { ...current.orgCard,    orgCardRadius:  presets.orgCardRadius },
+      rosterSlot: { ...current.rosterSlot, slotRadius:    presets.slotRadius    },
+      button:     { ...current.button,     buttonRadius:   presets.buttonRadius  },
+    }));
+  }
+
+  function handleGlowStrengthChange(value: GlowStrength) {
+    const presets = getGlowPreset(value);
+    setConfig((current) => ({
+      ...current,
+      theme: { ...current.theme, glowStrength: value, ...presets },
+    }));
+  }
+
+  function handleBorderStrengthChange(value: BorderStrength) {
+    const presets = getBorderPreset(value);
+    setConfig((current) => ({
+      ...current,
+      theme: { ...current.theme, borderStrength: value, ...presets },
+    }));
+  }
+
+  function handleMotionPresetChange(value: AnimationIntensity) {
+    const presets = getMotionPreset(value);
+    setConfig((current) => ({
+      ...current,
+      theme: { ...current.theme, animationIntensity: value, ...presets },
+    }));
+  }
+
+  function handleTeamCountChange(value: 6 | 7 | 8 | 9 | 10) {
+    setConfig((current) => ({
+      ...current,
+      board: {
+        ...current.board,
+        teamCount: value,
+        activeTeamIndex: Math.min(current.board.activeTeamIndex, value - 1),
+      },
     }));
   }
 
@@ -149,9 +207,19 @@ export function LabEditor() {
   }
 
   function resetConfig() {
+    prevConfigRef.current = config;
     setConfig(labEditorDefaults);
     setJsonDraft("");
     setJsonMessage("Reset to SAL defaults.");
+    forceRender((n) => n + 1);
+  }
+
+  function undoReset() {
+    if (!prevConfigRef.current) return;
+    setConfig(prevConfigRef.current);
+    prevConfigRef.current = null;
+    setJsonMessage("Restored pre-reset config.");
+    forceRender((n) => n + 1);
   }
 
   return (
@@ -160,7 +228,8 @@ export function LabEditor() {
         className={cn(
           "pointer-events-none absolute inset-0",
           config.theme.backgroundStyle === "grid" && "sal-grid",
-          config.theme.backgroundStyle === "smoke" && "bg-[radial-gradient(circle_at_20%_10%,rgba(34,211,238,0.16),transparent_28rem),radial-gradient(circle_at_80%_20%,rgba(251,146,60,0.12),transparent_30rem)]",
+          config.theme.backgroundStyle === "smoke" &&
+            "bg-[radial-gradient(circle_at_20%_10%,rgba(34,211,238,0.16),transparent_28rem),radial-gradient(circle_at_80%_20%,rgba(251,146,60,0.12),transparent_30rem)]",
         )}
         style={{ opacity: config.theme.backgroundGridOpacity / 100 }}
       />
@@ -191,6 +260,14 @@ export function LabEditor() {
               >
                 {debugMode ? "Debug On" : "Debug"}
               </button>
+              {prevConfigRef.current && (
+                <button
+                  onClick={undoReset}
+                  className={cn(utilityButtonClass, "border-orange-300/30 bg-orange-300/10 text-orange-100 hover:bg-orange-300/20")}
+                >
+                  Undo Reset
+                </button>
+              )}
               <button
                 data-testid="reset-config"
                 onClick={resetConfig}
@@ -201,12 +278,26 @@ export function LabEditor() {
             </div>
           </div>
         </header>
+
         <section className="min-w-0">
           <div className={cn("grid", previewPanelGapClass)}>
-            <PreviewPanel eyebrow="Theme" title="Page theme, card chrome, and motion" tunedBy={["Theme"]} collapsed={collapsedSections.has("Theme")} onToggle={() => toggleSectionCollapse("Theme")}>
+            <PreviewPanel
+              eyebrow="Theme"
+              title="Page theme, card chrome, and motion"
+              tunedBy={["Theme"]}
+              collapsed={collapsedSections.has("Theme")}
+              onToggle={() => toggleSectionCollapse("Theme")}
+            >
               <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
                 <InlineControls title="Theme controls">
-                  <ThemeControls config={config} updateSection={updateSection} onCornerStyleChange={handleCornerStyleChange} />
+                  <ThemeControls
+                    config={config}
+                    updateSection={updateSection}
+                    onCornerStyleChange={handleCornerStyleChange}
+                    onGlowStrengthChange={handleGlowStrengthChange}
+                    onBorderStrengthChange={handleBorderStrengthChange}
+                    onMotionPresetChange={handleMotionPresetChange}
+                  />
                 </InlineControls>
                 <PreviewTarget label="Theme surface samples" affectedBy="Theme controls affect the page backdrop, card borders/glow/corners, and transition speed. Button shape/style lives in the Button section.">
                   <div className="grid gap-3 lg:grid-cols-3">
@@ -214,7 +305,8 @@ export function LabEditor() {
                       className={cn(
                         "min-h-40 overflow-hidden border p-5 transition",
                         config.theme.backgroundStyle === "grid" && "sal-grid",
-                        config.theme.backgroundStyle === "smoke" && "bg-[radial-gradient(circle_at_20%_20%,rgba(34,211,238,0.22),transparent_9rem),radial-gradient(circle_at_80%_30%,rgba(251,146,60,0.18),transparent_10rem)]",
+                        config.theme.backgroundStyle === "smoke" &&
+                          "bg-[radial-gradient(circle_at_20%_20%,rgba(34,211,238,0.22),transparent_9rem),radial-gradient(circle_at_80%_30%,rgba(251,146,60,0.18),transparent_10rem)]",
                         config.theme.backgroundStyle === "clean" && "bg-slate-950",
                       )}
                       style={{
@@ -261,7 +353,13 @@ export function LabEditor() {
               </div>
             </PreviewPanel>
 
-            <PreviewPanel eyebrow="Button Preview" title="Reusable SAL action buttons" tunedBy={["Buttons", "Theme"]} collapsed={collapsedSections.has("Button Preview")} onToggle={() => toggleSectionCollapse("Button Preview")}>
+            <PreviewPanel
+              eyebrow="Button Preview"
+              title="Reusable SAL action buttons"
+              tunedBy={["Buttons", "Theme"]}
+              collapsed={collapsedSections.has("Button Preview")}
+              onToggle={() => toggleSectionCollapse("Button Preview")}
+            >
               <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
                 <InlineControls title="Button controls">
                   <ButtonControls config={config} updateSection={updateSection} />
@@ -284,7 +382,13 @@ export function LabEditor() {
               </div>
             </PreviewPanel>
 
-            <PreviewPanel eyebrow="Cards" title="Profile and draft pool tuning" tunedBy={["Player Cards", "Theme"]} collapsed={collapsedSections.has("Cards")} onToggle={() => toggleSectionCollapse("Cards")}>
+            <PreviewPanel
+              eyebrow="Cards"
+              title="Profile and draft pool tuning"
+              tunedBy={["Player Cards", "Theme"]}
+              collapsed={collapsedSections.has("Cards")}
+              onToggle={() => toggleSectionCollapse("Cards")}
+            >
               <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
                 <InlineControls title="Player card controls">
                   <PlayerCardControls config={config} updateSection={updateSection} />
@@ -304,7 +408,13 @@ export function LabEditor() {
               </div>
             </PreviewPanel>
 
-            <PreviewPanel eyebrow="Roster Slots" title="Drafted, active, ghost, and empty states" tunedBy={["Roster Slots", "Theme"]} collapsed={collapsedSections.has("Roster Slots")} onToggle={() => toggleSectionCollapse("Roster Slots")}>
+            <PreviewPanel
+              eyebrow="Roster Slots"
+              title="Drafted, active, ghost, and empty states"
+              tunedBy={["Roster Slots", "Theme"]}
+              collapsed={collapsedSections.has("Roster Slots")}
+              onToggle={() => toggleSectionCollapse("Roster Slots")}
+            >
               <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
                 <InlineControls title="Roster slot controls">
                   <RosterSlotControls config={config} updateSection={updateSection} />
@@ -322,7 +432,13 @@ export function LabEditor() {
               </div>
             </PreviewPanel>
 
-            <PreviewPanel eyebrow="Ghost Queue" title="Private queue preview cards" tunedBy={["Ghost Queue", "Theme"]} collapsed={collapsedSections.has("Ghost Queue")} onToggle={() => toggleSectionCollapse("Ghost Queue")}>
+            <PreviewPanel
+              eyebrow="Ghost Queue"
+              title="Private queue preview cards"
+              tunedBy={["Ghost Queue", "Theme"]}
+              collapsed={collapsedSections.has("Ghost Queue")}
+              onToggle={() => toggleSectionCollapse("Ghost Queue")}
+            >
               <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
                 <InlineControls title="Ghost queue controls">
                   <GhostQueueControls config={config} updateSection={updateSection} />
@@ -338,26 +454,44 @@ export function LabEditor() {
               </div>
             </PreviewPanel>
 
-            <PreviewPanel eyebrow="Org Roster" title="Captain card and roster construction" tunedBy={["Org Cards", "Roster Slots", "Theme"]} collapsed={collapsedSections.has("Org Roster")} onToggle={() => toggleSectionCollapse("Org Roster")}>
+            <PreviewPanel
+              eyebrow="Org Roster"
+              title="Captain card and roster construction"
+              tunedBy={["Org Cards", "Roster Slots", "Theme"]}
+              collapsed={collapsedSections.has("Org Roster")}
+              onToggle={() => toggleSectionCollapse("Org Roster")}
+            >
               <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
                 <InlineControls title="Org card controls">
                   <OrgCardControls config={config} updateSection={updateSection} />
                 </InlineControls>
                 <PreviewTarget label="Org roster card" affectedBy="Org Card controls tune the shell/header; Roster Slot controls tune each roster row">
                   <div className="max-w-full">
-                    <OrgRosterCard org={{ ...orgRosters[0], state: config.orgCard.activeState ? "active" : "inactive" }} editorConfig={config} />
+                    <OrgRosterCard
+                      org={{ ...boardOrgs[0], state: config.orgCard.activeState ? "active" : "inactive" }}
+                      editorConfig={config}
+                    />
                   </div>
                 </PreviewTarget>
               </div>
             </PreviewPanel>
 
-            <PreviewPanel eyebrow="Mini Board" title="Mock draft board composition" tunedBy={["Board", "Org Cards", "Roster Slots", "Theme"]} collapsed={collapsedSections.has("Mini Board")} onToggle={() => toggleSectionCollapse("Mini Board")}>
+            <PreviewPanel
+              eyebrow="Mini Board"
+              title="Mock draft board composition"
+              tunedBy={["Board", "Org Cards", "Roster Slots", "Theme"]}
+              collapsed={collapsedSections.has("Mini Board")}
+              onToggle={() => toggleSectionCollapse("Mini Board")}
+            >
               <div className="grid gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
                 <InlineControls title="Board controls">
-                  <BoardControls config={config} updateSection={updateSection} />
+                  <BoardControls
+                    config={config}
+                    updateSection={updateSection}
+                    onTeamCountChange={handleTeamCountChange}
+                  />
                 </InlineControls>
                 <div className="min-w-0">
-                  {/* Canvas size toggle + preview zoom */}
                   <div className="mb-4 flex flex-col gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs font-black uppercase text-slate-400">Preview mode</span>
@@ -408,6 +542,9 @@ export function LabEditor() {
                         />
                         <span className="text-[0.65rem] font-bold text-slate-500">
                           {Math.round(effectivePreviewScale * 100)}%{previewZoom === "fit" ? " (fit)" : ""}
+                          {config.board.boardScale !== 1 && (
+                            <> · board scale {config.board.boardScale}× = effective {Math.round(effectivePreviewScale * config.board.boardScale * 100)}%</>
+                          )}
                         </span>
                       </div>
                     )}
@@ -415,96 +552,103 @@ export function LabEditor() {
 
                   {canvasSize === "preview" ? (
                     <>
-                  {config.board.showTopBanner ? (
-                <PreviewTarget label="Draft top banner" affectedBy="Board controls: top banner toggle and active team index">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-orange-300/25 bg-orange-400/10 px-4 py-3">
-                  <div>
-                    <p className="text-xs font-black uppercase text-orange-100">Round 2 Pick 9</p>
-                    <p className="text-xl font-black text-white">{boardOrgs[config.board.activeTeamIndex]?.name ?? "Active org"} is on the clock</p>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 font-mono text-lg font-black text-white">01:24</div>
-                </div>
-                </PreviewTarget>
-                  ) : null}
+                      {config.board.showTopBanner && (
+                        <PreviewTarget label="Draft top banner" affectedBy="Board controls: top banner toggle and active team index">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-orange-300/25 bg-orange-400/10 px-4 py-3">
+                            <div>
+                              <p className="text-xs font-black uppercase text-orange-100">Round 2 Pick 9</p>
+                              <p className="text-xl font-black text-white">
+                                {boardOrgs[config.board.activeTeamIndex]?.name ?? "Active org"} is on the clock
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 font-mono text-lg font-black text-white">01:24</div>
+                          </div>
+                        </PreviewTarget>
+                      )}
 
-                  <PreviewTarget label="Board team grid" affectedBy="Board controls: team count, layout preset, gaps, active team, inactive opacity, board scale. Layout presets render as centered flex rows.">
-              <div className="mb-3 flex items-center gap-3">
-                <p className="text-xs font-bold text-slate-400">View: <span className="text-slate-200">{config.board.viewMode}</span></p>
-                <p className="text-xs font-bold text-slate-400">Layout: <span className="text-slate-200">{config.board.layoutPreset} → [{getBoardRows(config.board.teamCount, config.board.layoutPreset).join(", ")}]</span></p>
-              </div>
-              <div
-                ref={boardPreviewRef}
-                className="w-full overflow-hidden"
-                style={{ height: `${Math.round(boardNaturalHeight * effectivePreviewScale)}px` }}
-              >
-                <div
-                  ref={boardContentRef}
-                  style={{
-                    transform: `scale(${effectivePreviewScale})`,
-                    transformOrigin: "top left",
-                    width: `${config.board.boardMaxWidth}px`,
-                  }}
-                >
-                  <div
-                    style={{
-                      transform: config.board.boardScale !== 1 ? `scale(${config.board.boardScale})` : undefined,
-                      transformOrigin: "top center",
-                    }}
-                  >
-                    <div className="flex flex-col" style={{ gap: `${config.board.rowGap}px` }}>
-                      {sliceBoardRows(boardOrgs, config.board.teamCount, config.board.layoutPreset).map(({ orgs, startIndex }, rowIndex) => (
-                        <div key={rowIndex} className="flex justify-center" style={{ gap: `${config.board.boardGap}px` }}>
-                          {orgs.map((org, i) => {
-                            const gi = startIndex + i;
-                            return (
-                              <div
-                                key={`${org.id}-${gi}`}
-                                style={{
-                                  opacity: gi === config.board.activeTeamIndex ? 1 : config.board.inactiveCardOpacity / 100,
-                                  transform: gi === config.board.activeTeamIndex ? `scale(${config.board.activeCardScale})` : undefined,
-                                }}
-                              >
-                                <OrgRosterCard org={org} editorConfig={config} />
-                              </div>
-                            );
-                          })}
+                      <PreviewTarget
+                        label="Board team grid"
+                        affectedBy="Board controls: team count, layout preset, gaps, active team, inactive opacity, board scale. Layout presets render as centered flex rows."
+                      >
+                        <div className="mb-3 flex items-center gap-3">
+                          <p className="text-xs font-bold text-slate-400">View: <span className="text-slate-200">{config.board.viewMode}</span></p>
+                          <p className="text-xs font-bold text-slate-400">
+                            Layout: <span className="text-slate-200">{config.board.layoutPreset} → [{getBoardRows(config.board.teamCount, config.board.layoutPreset).join(", ")}]</span>
+                          </p>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-                  </PreviewTarget>
+                        <div
+                          ref={boardPreviewRef}
+                          className="w-full overflow-hidden"
+                          style={{ height: `${Math.round(boardNaturalHeight * effectivePreviewScale)}px` }}
+                        >
+                          <div
+                            ref={boardContentRef}
+                            style={{
+                              transform: `scale(${effectivePreviewScale})`,
+                              transformOrigin: "top left",
+                              width: `${config.board.boardMaxWidth}px`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                transform: config.board.boardScale !== 1 ? `scale(${config.board.boardScale})` : undefined,
+                                transformOrigin: "top center",
+                              }}
+                            >
+                              <div className="flex flex-col" style={{ gap: `${config.board.rowGap}px` }}>
+                                {sliceBoardRows(boardOrgs, config.board.teamCount, config.board.layoutPreset).map(({ orgs, startIndex }, rowIndex) => (
+                                  <div key={rowIndex} className="flex justify-center" style={{ gap: `${config.board.boardGap}px` }}>
+                                    {orgs.map((org, i) => {
+                                      const gi = startIndex + i;
+                                      return (
+                                        <div
+                                          key={`${org.id}-${gi}`}
+                                          style={{
+                                            opacity: gi === config.board.activeTeamIndex ? 1 : config.board.inactiveCardOpacity / 100,
+                                            transform: gi === config.board.activeTeamIndex ? `scale(${config.board.activeCardScale})` : undefined,
+                                          }}
+                                        >
+                                          <OrgRosterCard org={org} editorConfig={config} />
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </PreviewTarget>
 
-                  {config.board.viewMode === "captain" && (
-                <PreviewTarget label="Captain ghost queue" affectedBy="Captain view only — private pick queue, hidden from spectators and caster">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <GhostQueueCard player={players[4]} queuePosition={1} editorConfig={config} />
-                  <GhostQueueCard player={players[0]} queuePosition={2} editorConfig={config} />
-                </div>
-                </PreviewTarget>
-                  )}
+                      {config.board.viewMode === "captain" && (
+                        <PreviewTarget label="Captain ghost queue" affectedBy="Captain view only — private pick queue, hidden from spectators and caster">
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <GhostQueueCard player={players[4]} queuePosition={1} editorConfig={config} />
+                            <GhostQueueCard player={players[0]} queuePosition={2} editorConfig={config} />
+                          </div>
+                        </PreviewTarget>
+                      )}
 
-                  {config.board.viewMode === "caster" && (
-                <PreviewTarget label="Caster overlay" affectedBy="Caster mode — all elements visible including picks and stats">
-                <div className="rounded-xl border border-fuchsia-300/20 bg-fuchsia-300/[0.06] px-3 py-2">
-                  <p className="text-xs font-black uppercase text-fuchsia-200">Caster mode active — recent picks + full board always visible regardless of captain queue</p>
-                </div>
-                </PreviewTarget>
-                  )}
+                      {config.board.viewMode === "caster" && (
+                        <PreviewTarget label="Caster overlay" affectedBy="Caster mode — all elements visible including picks and stats">
+                          <div className="rounded-xl border border-fuchsia-300/20 bg-fuchsia-300/[0.06] px-3 py-2">
+                            <p className="text-xs font-black uppercase text-fuchsia-200">Caster mode active — recent picks + full board always visible regardless of captain queue</p>
+                          </div>
+                        </PreviewTarget>
+                      )}
 
-                  {config.board.showRecentPicksWidget && config.board.viewMode !== "captain" ? (
-                <PreviewTarget label="Recent picks widget" affectedBy="Board controls: recent picks toggle; hidden in captain view; Theme controls affect surface">
-                <div className="mt-5 grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 sm:grid-cols-3">
-                  {players.slice(0, 3).map((player, index) => (
-                    <div key={player.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
-                      <p className="text-[0.65rem] font-black uppercase text-slate-500">Recent pick {index + 1}</p>
-                      <p className="mt-1 truncate text-sm font-black text-white">{player.ign}</p>
-                    </div>
-                  ))}
-                </div>
-                </PreviewTarget>
-                  ) : null}
+                      {config.board.showRecentPicksWidget && config.board.viewMode !== "captain" && (
+                        <PreviewTarget label="Recent picks widget" affectedBy="Board controls: recent picks toggle; hidden in captain view; Theme controls affect surface">
+                          <div className="mt-5 grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 sm:grid-cols-3">
+                            {players.slice(0, 3).map((player, index) => (
+                              <div key={player.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-3">
+                                <p className="text-[0.65rem] font-black uppercase text-slate-500">Recent pick {index + 1}</p>
+                                <p className="mt-1 truncate text-sm font-black text-white">{player.ign}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </PreviewTarget>
+                      )}
                     </>
                   ) : (
                     <BoardCanvas
@@ -520,25 +664,49 @@ export function LabEditor() {
               </div>
             </PreviewPanel>
 
-            <PreviewPanel eyebrow="JSON" title="Copy or import the current design config" collapsed={collapsedSections.has("JSON")} onToggle={() => toggleSectionCollapse("JSON")}>
+            <PreviewPanel
+              eyebrow="JSON"
+              title="Copy or import the current design config"
+              collapsed={collapsedSections.has("JSON")}
+              onToggle={() => toggleSectionCollapse("JSON")}
+            >
               <div className="grid gap-3 lg:grid-cols-2">
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <p className="text-sm font-bold text-slate-300">{jsonMessage}</p>
-                    <button data-testid="copy-json" onClick={copyJson} className={cn(utilityButtonClass, "border-cyan-200/20 bg-cyan-300/10 text-cyan-100 hover:bg-cyan-300/15 active:bg-cyan-100/30")}>
+                    <button
+                      data-testid="copy-json"
+                      onClick={copyJson}
+                      className={cn(utilityButtonClass, "border-cyan-200/20 bg-cyan-300/10 text-cyan-100 hover:bg-cyan-300/15 active:bg-cyan-100/30")}
+                    >
                       Copy JSON
                     </button>
                   </div>
-                  <textarea data-testid="config-json" readOnly value={configJson} className="h-80 w-full resize-none rounded-2xl border border-white/10 bg-black/45 p-3 font-mono text-xs leading-5 text-cyan-50 outline-none" />
+                  <textarea
+                    data-testid="config-json"
+                    readOnly
+                    value={configJson}
+                    className="h-80 w-full resize-none rounded-2xl border border-white/10 bg-black/45 p-3 font-mono text-xs leading-5 text-cyan-50 outline-none"
+                  />
                 </div>
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <p className="text-sm font-bold text-slate-300">Paste edited JSON here.</p>
-                    <button data-testid="apply-json" onClick={importJson} className={cn(utilityButtonClass, "border-orange-200/20 bg-orange-300/10 text-orange-100 hover:bg-orange-300/15 active:bg-orange-100/30")}>
+                    <button
+                      data-testid="apply-json"
+                      onClick={importJson}
+                      className={cn(utilityButtonClass, "border-orange-200/20 bg-orange-300/10 text-orange-100 hover:bg-orange-300/15 active:bg-orange-100/30")}
+                    >
                       Apply JSON
                     </button>
                   </div>
-                  <textarea data-testid="json-import" value={jsonDraft} onChange={(event) => setJsonDraft(event.target.value)} className="h-80 w-full resize-none rounded-2xl border border-white/10 bg-black/45 p-3 font-mono text-xs leading-5 text-slate-100 outline-none" placeholder="Paste SAL editor JSON..." />
+                  <textarea
+                    data-testid="json-import"
+                    value={jsonDraft}
+                    onChange={(event) => setJsonDraft(event.target.value)}
+                    className="h-80 w-full resize-none rounded-2xl border border-white/10 bg-black/45 p-3 font-mono text-xs leading-5 text-slate-100 outline-none"
+                    placeholder="Paste SAL editor JSON..."
+                  />
                 </div>
               </div>
               {debugMode && (
@@ -560,522 +728,4 @@ export function LabEditor() {
       </div>
     </main>
   );
-}
-
-function BoardCanvas({
-  config,
-  boardOrgs,
-  canvasSize,
-  canvasScale,
-  containerRef,
-  themeClass,
-}: {
-  config: LabEditorConfig;
-  boardOrgs: OrgRoster[];
-  canvasSize: Exclude<CanvasSize, "preview">;
-  canvasScale: number;
-  containerRef: RefObject<HTMLDivElement | null>;
-  themeClass: string;
-}) {
-  const canvasW = canvasSize === "1920x1080" ? 1920 : 1280;
-  const canvasH = canvasSize === "1920x1080" ? 1080 : 720;
-  const scaledH = Math.round(canvasH * canvasScale);
-
-  return (
-    <div
-      ref={containerRef}
-      className="w-full rounded-2xl border border-white/15 overflow-hidden"
-      style={{ height: scaledH > 0 ? `${scaledH}px` : "620px" }}
-    >
-      <div
-        className={cn("relative overflow-hidden", themeClass)}
-        style={{
-          width: `${canvasW}px`,
-          height: `${canvasH}px`,
-          transform: `scale(${canvasScale})`,
-          transformOrigin: "top left",
-        }}
-      >
-        {/* Background overlays matching the editor page */}
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-0",
-            config.theme.backgroundStyle === "grid" && "sal-grid",
-            config.theme.backgroundStyle === "smoke" &&
-              "bg-[radial-gradient(circle_at_20%_10%,rgba(34,211,238,0.16),transparent_28rem),radial-gradient(circle_at_80%_20%,rgba(251,146,60,0.12),transparent_30rem)]",
-          )}
-          style={{ opacity: config.theme.backgroundGridOpacity / 100 }}
-        />
-        <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_25%,rgba(0,0,0,0.72)_100%)]"
-          style={{ opacity: config.theme.backgroundVignetteStrength / 100 }}
-        />
-
-        {/* Stream content */}
-        <div className="relative flex h-full flex-col gap-4 p-8">
-          {config.board.showTopBanner ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-orange-300/25 bg-orange-400/10 px-6 py-4">
-              <div>
-                <p className="text-sm font-black uppercase text-orange-100">Round 2 Pick 9</p>
-                <p className="text-3xl font-black text-white">
-                  {boardOrgs[config.board.activeTeamIndex]?.name ?? "Active org"} is on the clock
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-3 font-mono text-2xl font-black text-white">01:24</div>
-            </div>
-          ) : null}
-
-          <div
-            className="flex-1 min-w-0 w-full mx-auto"
-            style={{
-              maxWidth: `${config.board.boardMaxWidth}px`,
-              transform: config.board.boardScale !== 1 ? `scale(${config.board.boardScale})` : undefined,
-              transformOrigin: "top center",
-            }}
-          >
-            <div className="flex flex-col" style={{ gap: `${config.board.rowGap}px` }}>
-              {sliceBoardRows(boardOrgs, config.board.teamCount, config.board.layoutPreset).map(({ orgs, startIndex }, rowIndex) => (
-                <div key={rowIndex} className="flex justify-center" style={{ gap: `${config.board.boardGap}px` }}>
-                  {orgs.map((org, i) => {
-                    const gi = startIndex + i;
-                    return (
-                      <div
-                        key={`${org.id}-${gi}`}
-                        style={{
-                          opacity: gi === config.board.activeTeamIndex ? 1 : config.board.inactiveCardOpacity / 100,
-                          transform: gi === config.board.activeTeamIndex ? `scale(${config.board.activeCardScale})` : undefined,
-                        }}
-                      >
-                        <OrgRosterCard org={org} editorConfig={config} />
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {config.board.showRecentPicksWidget && config.board.viewMode !== "captain" ? (
-            <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/25 p-4" style={{ gridTemplateColumns: `repeat(${Math.min(players.length, 5)}, 1fr)` }}>
-              {players.slice(0, 5).map((player, index) => (
-                <div key={player.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
-                  <p className="text-xs font-black uppercase text-slate-500">Recent pick {index + 1}</p>
-                  <p className="mt-1 truncate text-lg font-black text-white">{player.ign}</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PreviewPanel({ eyebrow, title, tunedBy, collapsed, onToggle, children }: { eyebrow: string; title: string; tunedBy?: string[]; collapsed?: boolean; onToggle?: () => void; children: React.ReactNode }) {
-  return (
-    <section className="min-w-0 rounded-2xl border border-white/10 bg-slate-950/70 shadow-2xl shadow-black/30 backdrop-blur">
-      <button
-        type="button"
-        onClick={onToggle}
-        className={cn(
-          "flex w-full cursor-pointer flex-wrap items-end justify-between gap-3 p-4 text-left transition hover:bg-white/[0.02]",
-          collapsed ? "rounded-2xl" : "rounded-t-2xl",
-        )}
-      >
-        <div>
-          <p className="text-xs font-black uppercase text-cyan-200/80">{eyebrow}</p>
-          <h2 className="mt-1 text-2xl font-black text-white">{title}</h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {tunedBy ? (
-            <div className="flex flex-wrap gap-1.5">
-              {tunedBy.map((item) => (
-                <span key={item} className="rounded-full border border-orange-200/15 bg-orange-300/10 px-2 py-1 text-[0.65rem] font-black uppercase text-orange-100/80">
-                  Tuned by {item}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          <span className={cn("ml-1 text-slate-500 transition-transform", !collapsed && "rotate-180")}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-              <path d="M2 5l5 5 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-        </div>
-      </button>
-      {!collapsed && <div className="min-w-0 border-t border-white/10 p-4 pt-4">{children}</div>}
-    </section>
-  );
-}
-
-function InlineControls({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div data-testid={`controls-${slugify(title)}`} className="h-fit rounded-2xl border border-white/10 bg-black/25 2xl:sticky 2xl:top-4">
-      <p className="px-3 pt-3 text-xs font-black uppercase text-cyan-100">{title}</p>
-      <div className="grid gap-3 overflow-y-auto p-3 pt-2 2xl:max-h-[calc(100vh-6rem)]">{children}</div>
-    </div>
-  );
-}
-
-function ControlDivider({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-2 pt-1">
-      <div className="h-px flex-1 bg-white/10" />
-      <span className="text-[0.6rem] font-black uppercase tracking-wider text-slate-500">{label}</span>
-      <div className="h-px flex-1 bg-white/10" />
-    </div>
-  );
-}
-
-function PlayerCardControls({ config, updateSection }: { config: LabEditorConfig; updateSection: UpdateSection }) {
-  return (
-    <>
-      <SelectControl label="Density" value={config.playerCard.density} options={["compact", "standard", "full"]} onChange={(value) => updateSection("playerCard", "density", value)} />
-      <ToggleRow label="Banner" value={config.playerCard.showBanner} onChange={(value) => updateSection("playerCard", "showBanner", value)} />
-      <ToggleRow label="Timezone" value={config.playerCard.showTimezone} onChange={(value) => updateSection("playerCard", "showTimezone", value)} />
-      <ToggleRow label="Tags" value={config.playerCard.showTags} onChange={(value) => updateSection("playerCard", "showTags", value)} />
-      <ToggleRow label="Discord username" value={config.playerCard.showDiscordUsername} onChange={(value) => updateSection("playerCard", "showDiscordUsername", value)} />
-      <ToggleRow label="Org/free agent badge" value={config.playerCard.showOrgBadge} onChange={(value) => updateSection("playerCard", "showOrgBadge", value)} />
-      <Slider label="Card scale" value={config.playerCard.cardScale} min={0.75} max={1.35} step={0.01} onChange={(value) => updateSection("playerCard", "cardScale", value)} />
-      <Slider label="Card width" value={config.playerCard.cardWidth} min={220} max={420} suffix="px" onChange={(value) => updateSection("playerCard", "cardWidth", value)} />
-      <Slider label="Card radius" value={config.playerCard.cardRadius} min={4} max={40} suffix="px" onChange={(value) => updateSection("playerCard", "cardRadius", value)} />
-      <Slider label="Card padding" value={config.playerCard.cardPadding} min={8} max={32} suffix="px" onChange={(value) => updateSection("playerCard", "cardPadding", value)} />
-      <Slider label="Banner height" value={config.playerCard.bannerHeight} min={40} max={180} suffix="px" onChange={(value) => updateSection("playerCard", "bannerHeight", value)} />
-      <Slider label="Avatar size" value={config.playerCard.avatarSize} min={32} max={96} suffix="px" onChange={(value) => updateSection("playerCard", "avatarSize", value)} />
-      <Slider label="Tag size" value={config.playerCard.tagSize} min={10} max={18} suffix="px" onChange={(value) => updateSection("playerCard", "tagSize", value)} />
-    </>
-  );
-}
-
-function RosterSlotControls({ config, updateSection }: { config: LabEditorConfig; updateSection: UpdateSection }) {
-  return (
-    <>
-      <ToggleRow label="Pick numbers" value={config.rosterSlot.showPickNumbers} onChange={(value) => updateSection("rosterSlot", "showPickNumbers", value)} />
-      <ToggleRow label="Empty slots" value={config.rosterSlot.showEmptySlots} onChange={(value) => updateSection("rosterSlot", "showEmptySlots", value)} />
-      <ToggleRow label="Ghost queue" value={config.rosterSlot.showGhostQueue} onChange={(value) => updateSection("rosterSlot", "showGhostQueue", value)} />
-      <SelectControl label="Slot density" value={config.rosterSlot.slotDensity} options={["compact", "standard"]} onChange={(value) => updateSection("rosterSlot", "slotDensity", value)} />
-      <SelectControl label="Selected pulse" value={config.rosterSlot.selectedSlotPulse} options={["off", "subtle", "strong"]} onChange={(value) => updateSection("rosterSlot", "selectedSlotPulse", value)} />
-      <Slider label="Slot height" value={config.rosterSlot.slotHeight} min={38} max={110} suffix="px" onChange={(value) => updateSection("rosterSlot", "slotHeight", value)} />
-      <Slider label="Slot radius" value={config.rosterSlot.slotRadius} min={4} max={28} suffix="px" onChange={(value) => updateSection("rosterSlot", "slotRadius", value)} />
-      <Slider label="Slot padding" value={config.rosterSlot.slotPadding} min={6} max={24} suffix="px" onChange={(value) => updateSection("rosterSlot", "slotPadding", value)} />
-      <Slider label="Pick number size" value={config.rosterSlot.pickNumberSize} min={10} max={24} suffix="px" onChange={(value) => updateSection("rosterSlot", "pickNumberSize", value)} />
-      <Slider label="Ghost opacity" value={config.rosterSlot.ghostOpacity} min={10} max={80} suffix="%" onChange={(value) => updateSection("rosterSlot", "ghostOpacity", value)} />
-      <Slider label="Selected pulse strength" value={config.rosterSlot.selectedPulseStrength} min={0} max={100} suffix="%" onChange={(value) => updateSection("rosterSlot", "selectedPulseStrength", value)} />
-    </>
-  );
-}
-
-function OrgCardControls({ config, updateSection }: { config: LabEditorConfig; updateSection: UpdateSection }) {
-  return (
-    <>
-      <SelectControl label="Roster size" value={String(config.orgCard.rosterSize)} options={["6", "7", "8"]} onChange={(value) => updateSection("orgCard", "rosterSize", Number(value) as 6 | 7 | 8)} />
-      <ToggleRow label="Captain locked slot" value={config.orgCard.showCaptainLockedSlot} onChange={(value) => updateSection("orgCard", "showCaptainLockedSlot", value)} />
-      <ToggleRow label="Active state" value={config.orgCard.activeState} onChange={(value) => updateSection("orgCard", "activeState", value)} />
-      <SelectControl label="Header intensity" value={config.orgCard.headerIntensity} options={["low", "medium", "high"]} onChange={(value) => updateSection("orgCard", "headerIntensity", value)} />
-      <Slider label="Org card scale" value={config.orgCard.orgCardScale} min={0.75} max={1.25} step={0.01} onChange={(value) => updateSection("orgCard", "orgCardScale", value)} />
-      <Slider label="Org card width" value={config.orgCard.orgCardWidth} min={260} max={520} suffix="px" onChange={(value) => updateSection("orgCard", "orgCardWidth", value)} />
-      <Slider label="Org card radius" value={config.orgCard.orgCardRadius} min={8} max={44} suffix="px" onChange={(value) => updateSection("orgCard", "orgCardRadius", value)} />
-      <Slider label="Org card padding" value={config.orgCard.orgCardPadding} min={10} max={36} suffix="px" onChange={(value) => updateSection("orgCard", "orgCardPadding", value)} />
-      <Slider label="Org logo size" value={config.orgCard.orgLogoSize} min={32} max={96} suffix="px" onChange={(value) => updateSection("orgCard", "orgLogoSize", value)} />
-      <Slider label="Header height" value={config.orgCard.headerHeight} min={70} max={180} suffix="px" onChange={(value) => updateSection("orgCard", "headerHeight", value)} />
-      <Slider label="Active glow intensity" value={config.orgCard.activeGlowIntensity} min={0} max={100} suffix="%" onChange={(value) => updateSection("orgCard", "activeGlowIntensity", value)} />
-    </>
-  );
-}
-
-function GhostQueueControls({ config, updateSection }: { config: LabEditorConfig; updateSection: UpdateSection }) {
-  return (
-    <>
-      <ControlDivider label="Visibility" />
-      <ToggleRow label="Position badge" value={config.ghostQueue.showPosition} onChange={(value) => updateSection("ghostQueue", "showPosition", value)} />
-      <ToggleRow label="Role pills" value={config.ghostQueue.showRoles} onChange={(value) => updateSection("ghostQueue", "showRoles", value)} />
-      <ToggleRow label="Subtext" value={config.ghostQueue.showSubtext} onChange={(value) => updateSection("ghostQueue", "showSubtext", value)} />
-      <ControlDivider label="Opacity" />
-      <Slider label="Card opacity" value={config.ghostQueue.cardOpacity} min={10} max={100} suffix="%" onChange={(value) => updateSection("ghostQueue", "cardOpacity", value)} />
-      <Slider label="Hover opacity" value={config.ghostQueue.hoverOpacity} min={10} max={100} suffix="%" onChange={(value) => updateSection("ghostQueue", "hoverOpacity", value)} />
-      <ControlDivider label="Shape & size" />
-      <SelectControl label="Border style" value={config.ghostQueue.borderStyle} options={["dashed", "solid", "none"] as GhostBorderStyle[]} onChange={(value) => updateSection("ghostQueue", "borderStyle", value)} />
-      <Slider label="Card radius" value={config.ghostQueue.cardRadius} min={4} max={32} suffix="px" onChange={(value) => updateSection("ghostQueue", "cardRadius", value)} />
-      <Slider label="Card padding" value={config.ghostQueue.cardPadding} min={8} max={28} suffix="px" onChange={(value) => updateSection("ghostQueue", "cardPadding", value)} />
-      <Slider label="Avatar size" value={config.ghostQueue.avatarSize} min={32} max={80} suffix="px" onChange={(value) => updateSection("ghostQueue", "avatarSize", value)} />
-    </>
-  );
-}
-
-function BoardControls({ config, updateSection }: { config: LabEditorConfig; updateSection: UpdateSection }) {
-  return (
-    <>
-      <SelectControl label="Team count" value={String(config.board.teamCount)} options={["6", "7", "8", "9", "10"]} onChange={(value) => updateSection("board", "teamCount", Number(value) as 6 | 7 | 8 | 9 | 10)} />
-      <SelectControl label="Layout preset" value={config.board.layoutPreset} options={["balanced", "4-4", "5-4", "4-5"]} onChange={(value) => updateSection("board", "layoutPreset", value)} />
-      <Slider label="Active team index" value={config.board.activeTeamIndex} min={0} max={config.board.teamCount - 1} onChange={(value) => updateSection("board", "activeTeamIndex", Math.round(value))} />
-      <SelectControl label="View mode" value={config.board.viewMode} options={["spectator", "captain", "caster"]} onChange={(value) => updateSection("board", "viewMode", value)} />
-      <p className="text-[0.65rem] font-semibold text-slate-500">Spectator: no queue. Captain: ghost queue shown, no recent picks. Caster: all elements visible.</p>
-      <ToggleRow label="Recent picks widget" value={config.board.showRecentPicksWidget} onChange={(value) => updateSection("board", "showRecentPicksWidget", value)} />
-      <ToggleRow label="Top banner" value={config.board.showTopBanner} onChange={(value) => updateSection("board", "showTopBanner", value)} />
-      <Slider label="Board max width" value={config.board.boardMaxWidth} min={900} max={1800} suffix="px" onChange={(value) => updateSection("board", "boardMaxWidth", value)} />
-      <Slider label="Board gap" value={config.board.boardGap} min={8} max={40} suffix="px" onChange={(value) => updateSection("board", "boardGap", value)} />
-      <Slider label="Row gap" value={config.board.rowGap} min={8} max={48} suffix="px" onChange={(value) => updateSection("board", "rowGap", value)} />
-      <Slider label="Board scale" value={config.board.boardScale} min={0.7} max={1.2} step={0.01} onChange={(value) => updateSection("board", "boardScale", value)} />
-      <Slider label="Inactive card opacity" value={config.board.inactiveCardOpacity} min={45} max={100} suffix="%" onChange={(value) => updateSection("board", "inactiveCardOpacity", value)} />
-      <Slider label="Active card scale" value={config.board.activeCardScale} min={1} max={1.2} step={0.01} onChange={(value) => updateSection("board", "activeCardScale", value)} />
-    </>
-  );
-}
-
-function ThemeControls({ config, updateSection, onCornerStyleChange }: { config: LabEditorConfig; updateSection: UpdateSection; onCornerStyleChange: (value: CornerStyle) => void }) {
-  return (
-    <>
-      <ControlDivider label="Identity" />
-      <SelectControl label="Theme" value={config.theme.theme} options={["cyan serpent", "purple plasma", "solar ember", "dark temple"]} onChange={(value) => updateSection("theme", "theme", value)} />
-      <SelectControl label="Background style" value={config.theme.backgroundStyle} options={["grid", "smoke", "clean"]} onChange={(value) => updateSection("theme", "backgroundStyle", value)} />
-      <SelectControl label="Corner style" value={config.theme.cornerStyle} options={["sharp", "soft", "pillowy"]} onChange={onCornerStyleChange} />
-      <SelectControl label="Spacing" value={config.theme.spacing} options={["compact", "balanced", "cinematic"]} onChange={(value) => updateSection("theme", "spacing", value)} />
-      <ControlDivider label="Glow & border presets (multiply sliders)" />
-      <SelectControl label="Glow preset" value={config.theme.glowStrength} options={["none", "low", "medium", "high", "nuclear"]} onChange={(value) => updateSection("theme", "glowStrength", value)} />
-      <SelectControl label="Border preset" value={config.theme.borderStrength} options={["none", "subtle", "clear", "bright"]} onChange={(value) => updateSection("theme", "borderStrength", value)} />
-      <ControlDivider label="Fine-grain controls" />
-      <Slider label="Glow opacity" value={config.theme.globalGlowOpacity} min={0} max={100} suffix="%" onChange={(value) => updateSection("theme", "globalGlowOpacity", value)} />
-      <Slider label="Glow blur" value={config.theme.globalGlowBlur} min={0} max={80} suffix="px" onChange={(value) => updateSection("theme", "globalGlowBlur", value)} />
-      <Slider label="Border opacity" value={config.theme.borderOpacity} min={0} max={100} suffix="%" onChange={(value) => updateSection("theme", "borderOpacity", value)} />
-      <ControlDivider label="Background" />
-      <Slider label="Grid opacity" value={config.theme.backgroundGridOpacity} min={0} max={100} suffix="%" onChange={(value) => updateSection("theme", "backgroundGridOpacity", value)} />
-      <Slider label="Vignette strength" value={config.theme.backgroundVignetteStrength} min={0} max={100} suffix="%" onChange={(value) => updateSection("theme", "backgroundVignetteStrength", value)} />
-      <ControlDivider label="Motion preset (multiplies duration + lift)" />
-      <SelectControl label="Motion preset" value={config.theme.animationIntensity} options={["none", "subtle", "medium", "flashy"]} onChange={(value) => updateSection("theme", "animationIntensity", value)} />
-      <ControlDivider label="Fine-grain controls" />
-      <Slider label="Motion duration" value={config.theme.motionDuration} min={80} max={1200} suffix="ms" onChange={(value) => updateSection("theme", "motionDuration", value)} />
-      <Slider label="Hover lift" value={config.theme.hoverLift} min={0} max={18} suffix="px" onChange={(value) => updateSection("theme", "hoverLift", value)} />
-    </>
-  );
-}
-
-function ButtonControls({ config, updateSection }: { config: LabEditorConfig; updateSection: UpdateSection }) {
-  return (
-    <>
-      <ControlDivider label="Style & intent" />
-      <SelectControl label="Button style" value={config.button.buttonStyle} options={["solid", "gradient", "glass", "outline", "neon"]} onChange={(value) => updateSection("button", "buttonStyle", value)} />
-      <SelectControl label="Primary intent" value={config.button.primaryIntent} options={["cyan", "purple", "ember", "serpent"]} onChange={(value) => updateSection("button", "primaryIntent", value)} />
-      <SelectControl label="Draft button intent" value={config.button.draftButtonIntent} options={["ember", "red alert", "solar", "white hot"]} onChange={(value) => updateSection("button", "draftButtonIntent", value)} />
-      <ControlDivider label="Shape & size" />
-      <SelectControl label="Button shape" value={config.button.buttonShape} options={["sharp", "soft", "pillowy"]} onChange={(value) => updateSection("button", "buttonShape", value)} />
-      <Slider label="Button height" value={config.button.buttonHeight} min={28} max={64} suffix="px" onChange={(value) => updateSection("button", "buttonHeight", value)} />
-      <Slider label="Button radius" value={config.button.buttonRadius} min={4} max={32} suffix="px" onChange={(value) => updateSection("button", "buttonRadius", value)} />
-      <Slider label="Button padding-x" value={config.button.buttonPaddingX} min={10} max={32} suffix="px" onChange={(value) => updateSection("button", "buttonPaddingX", value)} />
-      <Slider label="Button text size" value={config.button.buttonTextSize} min={11} max={18} suffix="px" onChange={(value) => updateSection("button", "buttonTextSize", value)} />
-      <ControlDivider label="Glow & border" />
-      <Slider label="Button border opacity" value={config.button.buttonBorderOpacity} min={0} max={100} suffix="%" onChange={(value) => updateSection("button", "buttonBorderOpacity", value)} />
-      <Slider label="Button glow opacity" value={config.button.buttonGlowOpacity} min={0} max={100} suffix="%" onChange={(value) => updateSection("button", "buttonGlowOpacity", value)} />
-      <Slider label="Button glow blur" value={config.button.buttonGlowBlur} min={0} max={60} suffix="px" onChange={(value) => updateSection("button", "buttonGlowBlur", value)} />
-      <Slider label="Gradient blend" value={config.button.gradientBlendIntensity} min={0} max={100} suffix="%" onChange={(value) => updateSection("button", "gradientBlendIntensity", value)} />
-      <ControlDivider label="Interaction" />
-      <SelectControl label="Hover effect" value={config.button.hoverEffect} options={["none", "lift", "brighten", "glow flare", "scanline"]} onChange={(value) => updateSection("button", "hoverEffect", value)} />
-      <SelectControl label="Press effect" value={config.button.pressEffect} options={["none", "compress", "flash", "ripple"]} onChange={(value) => updateSection("button", "pressEffect", value)} />
-      <Slider label="Hover lift" value={config.button.hoverLift} min={0} max={12} suffix="px" onChange={(value) => updateSection("button", "hoverLift", value)} />
-      <Slider label="Press scale" value={config.button.pressScale} min={0.92} max={1} step={0.01} onChange={(value) => updateSection("button", "pressScale", value)} />
-      <ControlDivider label="Disabled state" />
-      <SelectControl label="Disabled style" value={config.button.disabledStyle} options={["dim", "locked", "ghosted"]} onChange={(value) => updateSection("button", "disabledStyle", value)} />
-      <Slider label="Disabled opacity" value={config.button.disabledOpacity} min={20} max={80} suffix="%" onChange={(value) => updateSection("button", "disabledOpacity", value)} />
-    </>
-  );
-}
-
-function PreviewTarget({ label, affectedBy, children }: { label: string; affectedBy: string; children: React.ReactNode }) {
-  return (
-    <div data-testid="preview-target" className="min-w-0 rounded-2xl border border-cyan-200/12 bg-cyan-200/[0.025] p-3">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
-        <p className="text-xs font-black uppercase text-cyan-100">{label}</p>
-        <p className="text-[0.68rem] font-bold text-slate-400">{affectedBy}</p>
-      </div>
-      <div className="min-w-0 pb-2">{children}</div>
-    </div>
-  );
-}
-
-function ToggleRow({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) {
-  const controlId = slugify(label);
-
-  return (
-    <label data-control-label={label} data-control-kind="toggle" className="flex items-center justify-between gap-3 text-sm font-bold text-slate-200">
-      <span>{label}</span>
-      <input data-testid={`toggle-${controlId}`} type="checkbox" checked={value} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 accent-cyan-300" />
-    </label>
-  );
-}
-
-function SelectControl<Option extends string>({ label, value, options, onChange }: { label: string; value: Option; options: Option[]; onChange: (value: Option) => void }) {
-  const controlId = slugify(label);
-
-  return (
-    <label data-control-label={label} data-control-kind="select" className="grid gap-1 text-sm font-bold text-slate-200">
-      <span>{label}</span>
-      <select data-testid={`select-${controlId}`} value={value} onChange={(event) => onChange(event.target.value as Option)} className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm font-bold text-white outline-none focus:border-cyan-200/50">
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function Slider({ label, value, min, max, step = 1, suffix = "", onChange }: { label: string; value: number; min: number; max: number; step?: number; suffix?: string; onChange: (value: number) => void }) {
-  const controlId = slugify(label);
-
-  function updateValue(nextValue: number) {
-    const clamped = Math.min(max, Math.max(min, nextValue));
-    onChange(clamped);
-  }
-
-  return (
-    <label data-control-label={label} data-control-kind="slider" className="grid gap-1 text-sm font-bold text-slate-200">
-      <span className="flex items-center justify-between gap-3">
-        <span>{label}</span>
-        <span className="font-mono text-xs text-cyan-100">{formatNumber(value)}{suffix}</span>
-      </span>
-      <span className="grid grid-cols-[1fr_5.5rem] gap-2">
-        <input
-          data-testid={`slider-range-${controlId}`}
-          type="range"
-          value={value}
-          min={min}
-          max={max}
-          step={step}
-          onInput={(event) => updateValue(Number(event.currentTarget.value))}
-          onChange={(event) => updateValue(Number(event.currentTarget.value))}
-          className="w-full accent-cyan-300"
-        />
-        <input
-          data-testid={`slider-number-${controlId}`}
-          type="number"
-          value={value}
-          min={min}
-          max={max}
-          step={step}
-          onInput={(event) => updateValue(Number(event.currentTarget.value))}
-          onChange={(event) => updateValue(Number(event.currentTarget.value))}
-          className="h-8 rounded-lg border border-white/10 bg-black/35 px-2 text-right font-mono text-xs text-white outline-none focus:border-cyan-200/45"
-        />
-      </span>
-    </label>
-  );
-}
-
-function formatNumber(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
-}
-
-function slugify(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-}
-
-function mergeConfig(value: unknown): LabEditorConfig {
-  const next = value as Partial<LabEditorConfig>;
-  return {
-    playerCard: { ...labEditorDefaults.playerCard, ...(next.playerCard ?? {}) },
-    rosterSlot: { ...labEditorDefaults.rosterSlot, ...(next.rosterSlot ?? {}) },
-    orgCard: { ...labEditorDefaults.orgCard, ...(next.orgCard ?? {}) },
-    board: { ...labEditorDefaults.board, ...(next.board ?? {}) },
-    theme: { ...labEditorDefaults.theme, ...(next.theme ?? {}) },
-    button: { ...labEditorDefaults.button, ...(next.button ?? {}) },
-    ghostQueue: { ...labEditorDefaults.ghostQueue, ...(next.ghostQueue ?? {}) },
-  };
-}
-
-function buildBoardOrgs(config: LabEditorConfig): OrgRoster[] {
-  return Array.from({ length: config.board.teamCount }, (_, index) => {
-    const base = orgRosters[index % orgRosters.length];
-    return {
-      ...base,
-      id: `${base.id}-${index}`,
-      name: index < orgRosters.length ? base.name : `${base.name} ${index + 1}`,
-      draftPosition: index + 1,
-      state: index === config.board.activeTeamIndex ? "active" : "inactive",
-    };
-  });
-}
-
-function getBoardRows(teamCount: number, layoutPreset: LayoutPreset): number[] {
-  if (layoutPreset === "4-4") {
-    const rows: number[] = [];
-    let rem = teamCount;
-    while (rem > 0) { rows.push(Math.min(4, rem)); rem -= 4; }
-    return rows;
-  }
-  if (layoutPreset === "5-4") {
-    if (teamCount <= 5) return [teamCount];
-    if (teamCount <= 9) return [5, teamCount - 5];
-    return [5, 5];
-  }
-  if (layoutPreset === "4-5") {
-    if (teamCount <= 4) return [teamCount];
-    if (teamCount <= 9) return [4, teamCount - 4];
-    return [5, 5];
-  }
-  // balanced
-  if (teamCount <= 5) return [teamCount];
-  if (teamCount === 6) return [3, 3];
-  if (teamCount === 7) return [4, 3];
-  if (teamCount === 8) return [4, 4];
-  if (teamCount === 9) return [5, 4];
-  return [5, 5];
-}
-
-function sliceBoardRows(orgs: OrgRoster[], teamCount: number, layoutPreset: LayoutPreset): Array<{ orgs: OrgRoster[]; startIndex: number }> {
-  const rows = getBoardRows(teamCount, layoutPreset);
-  const result: Array<{ orgs: OrgRoster[]; startIndex: number }> = [];
-  let offset = 0;
-  for (const count of rows) {
-    result.push({ orgs: orgs.slice(offset, offset + count), startIndex: offset });
-    offset += count;
-  }
-  return result;
-}
-
-function getCornerStylePresets(style: CornerStyle) {
-  if (style === "sharp") return { cardRadius: 6, orgCardRadius: 8, slotRadius: 4, buttonRadius: 6 };
-  if (style === "pillowy") return { cardRadius: 32, orgCardRadius: 32, slotRadius: 20, buttonRadius: 28 };
-  return { cardRadius: 20, orgCardRadius: 20, slotRadius: 12, buttonRadius: 14 };
-}
-
-function getThemeRadius(config: LabEditorConfig) {
-  if (config.theme.cornerStyle === "sharp") return 8;
-  if (config.theme.cornerStyle === "pillowy") return 28;
-  return 18;
-}
-
-function getThemeClass(config: LabEditorConfig) {
-  if (config.theme.theme === "purple plasma") return "bg-[radial-gradient(circle_at_20%_0%,rgba(217,70,239,0.2),transparent_30rem),linear-gradient(135deg,#05030a,#111027_55%,#05030a)]";
-  if (config.theme.theme === "solar ember") return "bg-[radial-gradient(circle_at_25%_0%,rgba(251,146,60,0.2),transparent_30rem),linear-gradient(135deg,#080604,#17100b_55%,#050505)]";
-  if (config.theme.theme === "dark temple") return "bg-[linear-gradient(135deg,#020305,#090d14_55%,#020305)]";
-  return "bg-[radial-gradient(circle_at_20%_0%,rgba(34,211,238,0.16),transparent_30rem),linear-gradient(135deg,#05070d,#08111f_55%,#05070d)]";
-}
-
-function getPreviewPanelGapClass(config: LabEditorConfig) {
-  if (config.theme.spacing === "compact") return "gap-3";
-  if (config.theme.spacing === "cinematic") return "gap-8";
-  return "gap-5";
-}
-
-function readStoredConfig(): LabEditorConfig {
-  if (typeof window === "undefined") return labEditorDefaults;
-  try {
-    const stored = window.localStorage.getItem(storageKey);
-    if (stored) return mergeConfig(JSON.parse(stored));
-  } catch {}
-  return labEditorDefaults;
-}
-
-function readStoredMessage(): string {
-  if (typeof window === "undefined") return "Local changes autosave in this browser.";
-  try {
-    const stored = window.localStorage.getItem(storageKey);
-    if (stored) {
-      JSON.parse(stored);
-      return "Restored saved local config.";
-    }
-  } catch {
-    return "Saved config could not be read, using defaults.";
-  }
-  return "Local changes autosave in this browser.";
 }

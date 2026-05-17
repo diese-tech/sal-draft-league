@@ -138,3 +138,12 @@ export type LabEditorConfig = {
   button: ButtonEditorConfig;
   ghostQueue: GhostQueueEditorConfig;
 };
+
+export type UpdateSection = <
+  Section extends keyof LabEditorConfig,
+  Key extends keyof LabEditorConfig[Section],
+>(
+  section: Section,
+  key: Key,
+  value: LabEditorConfig[Section][Key],
+) => void;

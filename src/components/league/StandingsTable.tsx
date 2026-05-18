@@ -85,8 +85,49 @@ export function StandingsTable({
         })}
       </div>
 
+      {/* Mobile standings cards */}
+      <div className="grid gap-2 p-3 sm:hidden">
+        {divStandings.map((s, i) => {
+          const org = orgs.find((o) => o.id === s.orgId);
+          if (!org) return null;
+          const winPct = s.matchesPlayed > 0 ? (s.wins / s.matchesPlayed) : 0;
+
+          return (
+            <Link
+              key={s.orgId}
+              href={`/teams/${org.id}`}
+              className={cn(
+                "rounded-xl border border-white/10 p-3 transition-colors hover:bg-white/[0.04]",
+                i === 0 && topRow,
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <span className={cn("w-5 shrink-0 text-sm font-black tabular-nums", i === 0 ? "text-white" : "text-slate-500")}>
+                  {i + 1}
+                </span>
+                <OrgLogo initials={org.logoInitials} gradient={org.logoGradient} className="h-9 w-9 shrink-0 text-xs" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-white">{org.name}</p>
+                  <p className="text-[0.6rem] font-black uppercase text-slate-500">{org.tag}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-mono text-lg font-black text-white">{s.wins}-{s.losses}</p>
+                  <p className="text-[0.6rem] font-black uppercase text-slate-500">{(winPct * 100).toFixed(0)}%</p>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between border-t border-white/8 pt-2">
+                <span className="text-xs font-bold uppercase text-slate-500">
+                  GB {s.gamesBack === 0 ? "—" : s.gamesBack}
+                </span>
+                <StreakDots streak={s.streak} />
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+
       {/* Table header */}
-      <div className="grid grid-cols-[2rem_1fr_3.5rem_3.5rem_4rem_4rem_5rem] gap-x-3 border-b border-white/8 px-4 py-2.5 text-[0.65rem] font-black uppercase text-slate-500">
+      <div className="hidden grid-cols-[2rem_1fr_3.5rem_3.5rem_4rem_4rem_5rem] gap-x-3 border-b border-white/8 px-4 py-2.5 text-[0.65rem] font-black uppercase text-slate-500 sm:grid">
         <span>#</span>
         <span>Team</span>
         <span className="text-center">W</span>
@@ -107,7 +148,7 @@ export function StandingsTable({
             key={s.orgId}
             href={`/teams/${org.id}`}
             className={cn(
-              "grid grid-cols-[2rem_1fr_3.5rem_3.5rem_4rem_4rem_5rem] gap-x-3 items-center px-4 py-3 transition-colors hover:bg-white/[0.04]",
+              "hidden grid-cols-[2rem_1fr_3.5rem_3.5rem_4rem_4rem_5rem] items-center gap-x-3 px-4 py-3 transition-colors hover:bg-white/[0.04] sm:grid",
               i === 0 && topRow,
             )}
           >

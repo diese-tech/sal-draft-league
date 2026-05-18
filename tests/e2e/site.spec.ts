@@ -76,7 +76,7 @@ for (const division of ["Solar", "Lunar", "Gaia"]) {
     await page.goto("/standings");
     await page.getByRole("button", { name: division }).click();
     await expect(page.getByRole("button", { name: division })).toHaveClass(/text-/);
-    await expect(page.locator("a[href^='/teams/']").first()).toBeVisible();
+    await expect(page.locator("a[href^='/teams/']:visible").first()).toBeVisible();
   });
 }
 
@@ -235,6 +235,14 @@ test("standings admin includes standings table and match editor", async ({ page 
   await expect(page.getByText("Standings are recalculated from completed match scores.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Solar" })).toBeVisible();
   await expect(page.getByText("total matches")).toBeVisible();
+});
+
+test("mobile standings preserve readable team names", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/standings");
+  await expect(page.getByRole("link", { name: /Helix Reign/ }).first()).toBeVisible();
+  await expect(page.getByText("100%").first()).toBeVisible();
+  await expect.poll(() => hasHorizontalOverflow(page)).toBe(false);
 });
 
 for (const apiPath of ["/api/admin/matches", "/api/admin/players", "/api/admin/recalculate-standings"]) {

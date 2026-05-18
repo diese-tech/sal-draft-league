@@ -36,12 +36,14 @@ export function GlowPanel({
   active,
   editorConfig,
   style,
+  "data-testid": dataTestId,
 }: {
   children: React.ReactNode;
   className?: string;
   active?: boolean;
   editorConfig?: LabEditorConfig;
   style?: CSSProperties;
+  "data-testid"?: string;
 }) {
   const theme = editorConfig?.theme;
   const glowPreset = theme?.glowStrength === "none" ? 0 : theme?.glowStrength === "low" ? 0.45 : theme?.glowStrength === "high" ? 1.35 : theme?.glowStrength === "nuclear" ? 1.9 : 1;
@@ -63,6 +65,7 @@ export function GlowPanel({
 
   return (
     <div
+      data-testid={dataTestId}
       className={cn(
         "sal-glowpanel group relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/70 shadow-2xl shadow-cyan-950/30 backdrop-blur",
         "transition duration-300 hover:border-cyan-200/25 hover:shadow-cyan-500/10",

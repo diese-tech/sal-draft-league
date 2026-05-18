@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { NavShell } from "@/components/nav/NavShell";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,14 +14,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SAL Draft League",
-  description: "Serpent Ascension League draft component lab",
+  title: "Serpent Ascension League",
+  description: "Official hub for the Serpent Ascension League — Season 1",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body className="font-sans antialiased">{children}</body>
+      <body className="font-sans antialiased">
+        <NavShell>{children}</NavShell>
+      </body>
     </html>
   );
 }

@@ -11,6 +11,7 @@ export function OrgRosterCard({ org, editorConfig }: { org: OrgRoster; editorCon
 
   return (
     <GlowPanel
+      data-testid="org-roster-card"
       active={active}
       editorConfig={editorConfig}
       className="h-full shrink-0"

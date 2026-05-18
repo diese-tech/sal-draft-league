@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DraftPlayerCard } from "@/components/card-lab/DraftPlayerCard";
 import { GhostQueueCard } from "@/components/card-lab/GhostQueueCard";
 import { OrgRosterCard } from "@/components/card-lab/OrgRosterCard";
@@ -86,12 +86,8 @@ export function LabEditor() {
     const el = canvasContainerRef.current;
     if (!el) return;
     const targetW = canvasSize === "1920x1080" ? 1920 : 1280;
-    const targetH = canvasSize === "1920x1080" ? 1080 : 720;
-    const maxPreviewH = 620;
     const update = () => {
-      const scaleByW = el.getBoundingClientRect().width / targetW;
-      const scaleByH = maxPreviewH / targetH;
-      setCanvasScale(Math.min(scaleByW, scaleByH));
+      setCanvasScale(el.getBoundingClientRect().width / targetW);
     };
     update();
     const observer = new ResizeObserver(update);
@@ -99,29 +95,39 @@ export function LabEditor() {
     return () => observer.disconnect();
   }, [canvasSize]);
 
+  const boardOrgs = useMemo(() => buildBoardOrgs(config), [config]);
+  const boardNaturalRowW = useMemo(() => {
+    const bRows = sliceBoardRows(boardOrgs, config.board.teamCount, config.board.layoutPreset);
+    const maxPerRow = Math.max(...bRows.map((r) => r.orgs.length), 1);
+    // orgCardScale is a CSS transform — it doesn't affect layout width, so don't multiply it in
+    return maxPerRow * config.orgCard.orgCardWidth + (maxPerRow - 1) * config.board.boardGap;
+  }, [boardOrgs, config.board.teamCount, config.board.layoutPreset, config.orgCard.orgCardWidth, config.board.boardGap]);
+
   useEffect(() => {
     if (previewZoom !== "fit" || canvasSize !== "preview") return;
     const el = boardPreviewRef.current;
     if (!el) return;
-    const update = () => setFitScale(Math.min(1, el.getBoundingClientRect().width / config.board.boardMaxWidth));
+    // Width-only fit — height scrolls naturally in editor preview
+    const update = () => {
+      setFitScale(boardNaturalRowW > 0 ? Math.min(1, el.getBoundingClientRect().width / boardNaturalRowW) : 1);
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [previewZoom, canvasSize, config.board.boardMaxWidth]);
+  }, [previewZoom, canvasSize, boardNaturalRowW]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (canvasSize !== "preview") return;
     const el = boardContentRef.current;
     if (!el) return;
-    const update = () => setBoardNaturalHeight(el.scrollHeight);
-    update();
-    const observer = new ResizeObserver(update);
+    setBoardNaturalHeight(el.scrollHeight);
+    const observer = new ResizeObserver(() => setBoardNaturalHeight(el.scrollHeight));
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [canvasSize]);
 
   const configJson = useMemo(() => JSON.stringify(config, null, 2), [config]);
-  const boardOrgs = useMemo(() => buildBoardOrgs(config), [config]);
   const themeClass = getThemeClass(config);
   const previewPanelGapClass = getPreviewPanelGapClass(config);
   const effectivePreviewScale = previewZoom === "fit" ? fitScale : (previewZoom as number);
@@ -573,44 +579,47 @@ export function LabEditor() {
                             Layout: <span className="text-slate-200">{config.board.layoutPreset} → [{getBoardRows(config.board.teamCount, config.board.layoutPreset).join(", ")}]</span>
                           </p>
                         </div>
-                        <div
-                          ref={boardPreviewRef}
-                          className="w-full overflow-hidden"
-                          style={{ height: `${Math.round(boardNaturalHeight * effectivePreviewScale)}px` }}
-                        >
+                        <div className="resize-x overflow-hidden rounded-xl" style={{ minWidth: "320px" }}>
                           <div
-                            ref={boardContentRef}
-                            style={{
-                              transform: `scale(${effectivePreviewScale})`,
-                              transformOrigin: "top left",
-                              width: `${config.board.boardMaxWidth}px`,
-                            }}
+                            ref={boardPreviewRef}
+                            className="w-full overflow-hidden"
+                            style={{ height: `${Math.round(boardNaturalHeight * effectivePreviewScale)}px` }}
                           >
                             <div
+                              className="flex justify-center"
                               style={{
-                                transform: config.board.boardScale !== 1 ? `scale(${config.board.boardScale})` : undefined,
+                                transform: effectivePreviewScale !== 1 ? `scale(${effectivePreviewScale})` : undefined,
                                 transformOrigin: "top center",
                               }}
                             >
-                              <div className="flex flex-col" style={{ gap: `${config.board.rowGap}px` }}>
-                                {sliceBoardRows(boardOrgs, config.board.teamCount, config.board.layoutPreset).map(({ orgs, startIndex }, rowIndex) => (
-                                  <div key={rowIndex} className="flex justify-center" style={{ gap: `${config.board.boardGap}px` }}>
-                                    {orgs.map((org, i) => {
-                                      const gi = startIndex + i;
-                                      return (
-                                        <div
-                                          key={`${org.id}-${gi}`}
-                                          style={{
-                                            opacity: gi === config.board.activeTeamIndex ? 1 : config.board.inactiveCardOpacity / 100,
-                                            transform: gi === config.board.activeTeamIndex ? `scale(${config.board.activeCardScale})` : undefined,
-                                          }}
-                                        >
-                                          <OrgRosterCard org={org} editorConfig={config} />
-                                        </div>
-                                      );
-                                    })}
+                              <div ref={boardContentRef}>
+                                <div
+                                  style={{
+                                    transform: config.board.boardScale !== 1 ? `scale(${config.board.boardScale})` : undefined,
+                                    transformOrigin: "top center",
+                                  }}
+                                >
+                                  <div className="flex flex-col" style={{ gap: `${config.board.rowGap}px` }}>
+                                    {sliceBoardRows(boardOrgs, config.board.teamCount, config.board.layoutPreset).map(({ orgs, startIndex }, rowIndex) => (
+                                      <div key={rowIndex} className="flex justify-center" style={{ gap: `${config.board.boardGap}px` }}>
+                                        {orgs.map((org, i) => {
+                                          const gi = startIndex + i;
+                                          return (
+                                            <div
+                                              key={`${org.id}-${gi}`}
+                                              style={{
+                                                opacity: gi === config.board.activeTeamIndex ? 1 : config.board.inactiveCardOpacity / 100,
+                                                transform: gi === config.board.activeTeamIndex ? `scale(${config.board.activeCardScale})` : undefined,
+                                              }}
+                                            >
+                                              <OrgRosterCard org={org} editorConfig={config} />
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -648,14 +657,16 @@ export function LabEditor() {
                       )}
                     </>
                   ) : (
-                    <BoardCanvas
-                      config={config}
-                      boardOrgs={boardOrgs}
-                      canvasSize={canvasSize}
-                      canvasScale={canvasScale}
-                      containerRef={canvasContainerRef}
-                      themeClass={themeClass}
-                    />
+                    <div className="resize-x overflow-hidden rounded-2xl" style={{ minWidth: "400px" }}>
+                      <BoardCanvas
+                        config={config}
+                        boardOrgs={boardOrgs}
+                        canvasSize={canvasSize}
+                        canvasScale={canvasScale}
+                        containerRef={canvasContainerRef}
+                        themeClass={themeClass}
+                      />
+                    </div>
                   )}
                 </div>
               </div>

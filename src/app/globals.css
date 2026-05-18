@@ -61,3 +61,37 @@ body {
 .sal-button:hover:not(:active) {
   transform: translateY(calc(-1 * var(--sal-button-hover-lift, 4px)));
 }
+
+/* --- SAL nav height token --- */
+:root {
+  --sal-nav-height: 4rem;
+}
+
+/* --- Division glow utilities --- */
+.glow-solar {
+  box-shadow: 0 0 28px rgba(249, 115, 22, 0.28), 0 0 6px rgba(251, 191, 36, 0.15);
+}
+.glow-lunar {
+  box-shadow: 0 0 28px rgba(34, 211, 238, 0.28), 0 0 6px rgba(124, 58, 237, 0.15);
+}
+.glow-gaia {
+  box-shadow: 0 0 28px rgba(52, 211, 153, 0.28), 0 0 6px rgba(45, 212, 191, 0.15);
+}
+
+.hover\:glow-solar:hover { box-shadow: 0 0 28px rgba(249, 115, 22, 0.28); }
+.hover\:glow-lunar:hover  { box-shadow: 0 0 28px rgba(34, 211, 238, 0.28); }
+.hover\:glow-gaia:hover   { box-shadow: 0 0 28px rgba(52, 211, 153, 0.28); }
+
+/* --- Division border accent utilities --- */
+.border-solar { border-color: rgba(249, 115, 22, 0.3); }
+.border-lunar  { border-color: rgba(34, 211, 238, 0.3); }
+.border-gaia   { border-color: rgba(52, 211, 153, 0.3); }
+
+/* --- Live pulse animation --- */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+.live-pulse {
+  animation: live-pulse 1.6s ease-in-out infinite;
+}

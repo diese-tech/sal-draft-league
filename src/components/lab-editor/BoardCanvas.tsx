@@ -1,6 +1,7 @@
 "use client";
 
 import { type RefObject } from "react";
+import { GhostQueueCard } from "@/components/card-lab/GhostQueueCard";
 import { OrgRosterCard } from "@/components/card-lab/OrgRosterCard";
 import { players } from "@/data/mock-card-lab";
 import { sliceBoardRows } from "@/lib/lab-utils";
@@ -66,18 +67,63 @@ export function BoardCanvas({
   const canvasH = canvasSize === "1920x1080" ? 1080 : 720;
   const scaledH = Math.round(canvasH * canvasScale);
 
-  // Auto-fit: if the widest row of cards exceeds the usable canvas width, scale down to fit.
+  // Auto-fit: scale the board grid so it fits within the canvas (both width and height).
   const canvasPad = 64; // p-8 = 32px × 2
+  const CANVAS_GAP = 16; // gap-4 between canvas flex children
+
+  // Width fit — card CSS width = orgCardWidth × orgCardScale, so include the scale
   const usableW = Math.min(canvasW - canvasPad, config.board.boardMaxWidth);
   const rows = sliceBoardRows(boardOrgs, config.board.teamCount, config.board.layoutPreset);
   const maxTeamsPerRow = Math.max(...rows.map((r) => r.orgs.length), 1);
-  const naturalRowW = maxTeamsPerRow * config.orgCard.orgCardWidth + (maxTeamsPerRow - 1) * config.board.boardGap;
-  const fitScale = naturalRowW > usableW ? usableW / naturalRowW : 1;
+  const naturalRowW =
+    maxTeamsPerRow * config.orgCard.orgCardWidth * config.orgCard.orgCardScale +
+    (maxTeamsPerRow - 1) * config.board.boardGap;
+  const widthFitScale = naturalRowW > usableW ? usableW / naturalRowW : 1;
+
+  // Height fit — estimate card natural height from config values
+  const bannerTotalH = config.board.showTopBanner ? 90 + CANVAS_GAP : 0; // actual banner ~88px, round up
+  // Captain mode shows ghost queue at bottom (~135px) instead of recent picks (~120px)
+  const picksVisible = config.board.showRecentPicksWidget && config.board.viewMode !== "captain";
+  const bottomWidgetH = config.board.viewMode === "captain"
+    ? 135 + CANVAS_GAP  // ghost queue: p-3(24) + card p-16(32) + avatar(56) + text(27) ≈ 135px
+    : picksVisible ? 120 + CANVAS_GAP : 0;
+  const boardAreaH = canvasH - canvasPad - bannerTotalH - bottomWidgetH - 24; // 24px safety margin
+
+  // Captain block: p-3 top/bot(24) + label line(17) + mb-2(8) + avatar row size-11(44) = 93px; +space-y-3(12)
+  const captainBlockH = config.orgCard.showCaptainLockedSlot ? 94 + 12 : 0;
+  // Slots use minHeight: slotHeight, but content (name 24 + mt-1 4 + role pill 18 = 46px + 2×slotPadding)
+  // can push them taller than slotHeight
+  const effectiveSlotH = Math.max(
+    config.rosterSlot.slotHeight,
+    config.rosterSlot.slotPadding * 2 + 48,
+  );
+  const slotGridH =
+    config.orgCard.rosterSize * effectiveSlotH +
+    (config.orgCard.rosterSize - 1) * 8; // gap-2
+  const cardNaturalH =
+    config.orgCard.headerHeight +
+    config.orgCard.orgCardPadding * 2 +
+    captainBlockH + slotGridH;
+
+  // Extra vertical padding so active-card scale() doesn't clip against the container edges
+  const activePad = config.board.activeCardScale > 1
+    ? Math.ceil((config.board.activeCardScale - 1) * 0.5 * cardNaturalH)
+    : 0;
+
+  const boardNaturalH =
+    rows.length * cardNaturalH +
+    (rows.length - 1) * config.board.rowGap +
+    activePad * 2; // top + bottom overflow buffer
+  const heightFitScale = boardNaturalH > boardAreaH ? boardAreaH / boardNaturalH : 1;
+
+  const fitScale = Math.min(widthFitScale, heightFitScale);
   const effectiveBoardScale = config.board.boardScale * fitScale;
+  const boardVisualH = Math.round(boardNaturalH * effectiveBoardScale);
 
   return (
     <div
       ref={containerRef}
+      data-testid="sal-canvas"
       className="w-full overflow-hidden rounded-2xl border border-white/15"
       style={{ height: scaledH > 0 ? `${scaledH}px` : "620px" }}
     >
@@ -118,17 +164,30 @@ export function BoardCanvas({
           ) : null}
 
           <div
-            className="min-w-0 w-full mx-auto flex-1"
+            className="min-w-0 w-full mx-auto overflow-hidden"
             style={{
               maxWidth: `${config.board.boardMaxWidth}px`,
-              transform: effectiveBoardScale !== 1 ? `scale(${effectiveBoardScale})` : undefined,
-              transformOrigin: "top center",
+              height: `${boardVisualH}px`,
             }}
           >
-            <BoardTeamGrid config={config} boardOrgs={boardOrgs} />
+            <div
+              style={{
+                paddingTop: activePad > 0 ? `${activePad}px` : undefined,
+                paddingBottom: activePad > 0 ? `${activePad}px` : undefined,
+                transform: effectiveBoardScale !== 1 ? `scale(${effectiveBoardScale})` : undefined,
+                transformOrigin: "top center",
+              }}
+            >
+              <BoardTeamGrid config={config} boardOrgs={boardOrgs} />
+            </div>
           </div>
 
-          {config.board.showRecentPicksWidget && config.board.viewMode !== "captain" ? (
+          {config.board.viewMode === "captain" ? (
+            <div className="grid grid-cols-2 gap-3 rounded-2xl border border-cyan-200/15 bg-cyan-200/[0.04] p-3">
+              <GhostQueueCard player={players[4]} queuePosition={1} editorConfig={config} />
+              <GhostQueueCard player={players[0]} queuePosition={2} editorConfig={config} />
+            </div>
+          ) : picksVisible ? (
             <div
               className="grid gap-3 rounded-2xl border border-white/10 bg-black/25 p-4"
               style={{ gridTemplateColumns: `repeat(${Math.min(players.length, 5)}, 1fr)` }}

@@ -1,13 +1,16 @@
 import { AdminStatCard } from "@/components/league/AdminStatCard";
 import { requireAdmin } from "@/lib/admin-auth";
-import { getLeagueData } from "@/lib/league-data";
+import { getAuditLog, getLeagueData } from "@/lib/league-data";
 import Link from "next/link";
 
 export const metadata = { title: "Admin - SAL" };
 
 export default async function AdminOverviewPage() {
   await requireAdmin();
-  const { orgs, players, matches, standings, season } = await getLeagueData();
+  const [{ orgs, players, matches, standings, season }, auditLog] = await Promise.all([
+    getLeagueData(),
+    getAuditLog(30),
+  ]);
 
   const totalPlayers = players.length;
   const scheduledMatches = matches.filter((m) => m.status === "scheduled").length;
@@ -58,7 +61,7 @@ export default async function AdminOverviewPage() {
         ))}
       </div>
 
-      <div>
+      <div className="mb-8">
         <h2 className="mb-4 text-sm font-black uppercase tracking-widest text-cyan-300/70">Division Breakdown</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           {divisionBreakdown.map(({ id, orgs: orgCount, players: playerCount, topOrg }) => (
@@ -68,6 +71,26 @@ export default async function AdminOverviewPage() {
                 <Row label="Orgs" value={orgCount} />
                 <Row label="Players" value={playerCount} />
                 <Row label="Leader" value={topOrg} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="mb-4 text-sm font-black uppercase tracking-widest text-cyan-300/70">Activity Feed</h2>
+        <div className="overflow-hidden rounded-2xl border border-white/8 bg-slate-950/60">
+          {auditLog.length === 0 && (
+            <p className="px-4 py-6 text-center text-sm font-semibold text-slate-500">No activity recorded yet.</p>
+          )}
+          {auditLog.map((entry) => (
+            <div key={entry.id} className="flex items-start gap-3 border-b border-white/5 px-4 py-3 last:border-0">
+              <span className="mt-0.5 shrink-0 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2 py-0.5 text-[0.6rem] font-black uppercase text-cyan-200">
+                {entry.action.replace(/_/g, " ")}
+              </span>
+              <div className="min-w-0 flex-1">
+                {entry.entityId && <span className="text-xs font-semibold text-white/60">{entry.entityId}</span>}
+                <span className="ml-2 text-[0.65rem] text-slate-500">{new Date(entry.createdAt).toLocaleString()}</span>
               </div>
             </div>
           ))}

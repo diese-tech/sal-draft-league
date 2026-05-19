@@ -288,12 +288,52 @@ export async function seedLeagueData(data: LeagueData = MOCK_LEAGUE_DATA) {
   await supabase.from("standings").upsert(standings.map(toDbStanding));
 }
 
+export interface AuditLogEntry {
+  id: number;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  payload: unknown;
+  createdAt: string;
+}
+
+async function writeAuditLog(action: string, entityType: string | null, entityId: string | null, payload: unknown) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return;
+  await supabase.from("admin_audit_log").insert({ action, entity_type: entityType, entity_id: entityId, payload });
+}
+
+export async function getAuditLog(limit = 50): Promise<AuditLogEntry[]> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("admin_audit_log")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("getAuditLog error:", error.message);
+    return [];
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id as number,
+    action: row.action as string,
+    entityType: row.entity_type as string | null,
+    entityId: row.entity_id as string | null,
+    payload: row.payload,
+    createdAt: row.created_at as string,
+  }));
+}
+
 export async function saveMatch(match: Match) {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase env is missing.");
   const { error } = await supabase.from("matches").upsert(toDbMatch(match));
   if (error) throw error;
-  await recalculateAndPersistStandings();
+  await Promise.all([
+    recalculateAndPersistStandings(),
+    writeAuditLog("save_match", "match", match.id, match),
+  ]);
 }
 
 export async function savePlayer(player: LeaguePlayer) {
@@ -301,6 +341,7 @@ export async function savePlayer(player: LeaguePlayer) {
   if (!supabase) throw new Error("Supabase env is missing.");
   const { error } = await supabase.from("players").upsert(toDbPlayer(player));
   if (error) throw error;
+  await writeAuditLog("save_player", "player", player.id, { ign: player.ign, orgId: player.orgId, status: player.status });
 }
 
 export async function recalculateAndPersistStandings() {
@@ -327,5 +368,6 @@ export async function recalculateAndPersistStandings() {
   if (currentOrgIds.length > 0) {
     await supabase.from("standings").delete().not("org_id", "in", `(${currentOrgIds.map((id) => `"${id}"`).join(",")})`);
   }
+  await writeAuditLog("recalculate_standings", "standings", null, { orgCount: standings.length });
   return standings;
 }

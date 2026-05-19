@@ -1,30 +1,53 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { DivisionId, LeagueData, LeaguePlayer } from "@/types/league";
 import type { PlayerRole, PlayerStatus } from "@/types/card-lab";
+import { cn } from "@/lib/utils";
 
 const roles: PlayerRole[] = ["Solo", "Jungle", "Mid", "Carry", "Support", "Flex"];
-const statuses: PlayerStatus[] = ["free-agent", "org-affiliated", "drafted", "queued-ghost", "active"];
 
 export function AdminPlayersClient({ data }: { data: LeagueData }) {
   const router = useRouter();
   const [editing, setEditing] = useState<LeaguePlayer | null>(null);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Filters
+  const [search, setSearch] = useState("");
+  const [divFilter, setDivFilter] = useState<DivisionId | "all">("all");
+  const [orgFilter, setOrgFilter] = useState<string | "all">("all");
+
   const getOrg = (id?: string) => data.orgs.find((org) => org.id === id);
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return data.players.filter((p) => {
+      if (divFilter !== "all" && p.divisionId !== divFilter) return false;
+      if (orgFilter !== "all" && (orgFilter === "__free_agent__" ? !!p.orgId : p.orgId !== orgFilter)) return false;
+      if (q && !p.ign.toLowerCase().includes(q) && !p.discordUsername.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [data.players, search, divFilter, orgFilter]);
+
+  function openEdit(player: LeaguePlayer) {
+    setEditing(player);
+    setMessage("");
+  }
 
   async function save() {
     if (!editing) return;
     setSaving(true);
     setMessage("");
     const org = getOrg(editing.orgId);
+    // Derive status: if player has an org, they're org-affiliated; otherwise keep the admin's choice
+    const status: PlayerStatus = editing.orgId ? "org-affiliated" : editing.status;
     const payload: LeaguePlayer = {
       ...editing,
       orgId: editing.orgId || undefined,
       divisionId: org?.divisionId ?? editing.divisionId,
-      status: editing.orgId ? "org-affiliated" : editing.status,
+      status,
     };
     const res = await fetch("/api/admin/players", {
       method: "POST",
@@ -41,11 +64,33 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
     router.refresh();
   }
 
+  const freeAgentStatuses: PlayerStatus[] = ["free-agent", "drafted", "queued-ghost", "active"];
+
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-sm font-semibold text-slate-400">{data.players.length} registered players. Assign players to teams and update starter/captain roles.</p>
+        <p className="text-sm font-semibold text-slate-400">{data.players.length} registered players · {filtered.length} shown. Assign players to teams and update starter/captain roles.</p>
         {message && <p className="mt-1 text-sm font-semibold text-orange-200">{message}</p>}
+      </div>
+
+      {/* Search + filters */}
+      <div className="flex flex-wrap gap-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search IGN or Discord…"
+          className="rounded-xl border border-white/10 bg-black/45 px-3 py-1.5 text-sm font-semibold text-white placeholder-slate-500 outline-none focus:border-cyan-300/50"
+        />
+        <span className="w-px self-stretch bg-white/10" />
+        {(["all", "solar", "lunar", "gaia"] as const).map((d) => (
+          <FilterChip key={d} active={divFilter === d} onClick={() => setDivFilter(d)}>{d === "all" ? "All Divisions" : d.charAt(0).toUpperCase() + d.slice(1)}</FilterChip>
+        ))}
+        <span className="w-px self-stretch bg-white/10" />
+        <FilterChip active={orgFilter === "all"} onClick={() => setOrgFilter("all")}>All Teams</FilterChip>
+        <FilterChip active={orgFilter === "__free_agent__"} onClick={() => setOrgFilter("__free_agent__")}>Free Agents</FilterChip>
+        {data.orgs.map((org) => (
+          <FilterChip key={org.id} active={orgFilter === org.id} onClick={() => setOrgFilter(org.id)}>{org.tag}</FilterChip>
+        ))}
       </div>
 
       {editing && (
@@ -73,11 +118,17 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
                 {roles.map((role) => <option key={role} value={role}>{role}</option>)}
               </select>
             </Field>
-            <Field label="Status">
-              <select value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value as PlayerStatus })} className={inputClass}>
-                {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
-              </select>
-            </Field>
+            {editing.orgId ? (
+              <Field label="Status">
+                <div className={cn(inputClass, "flex items-center text-slate-400")}>org-affiliated (auto)</div>
+              </Field>
+            ) : (
+              <Field label="Status">
+                <select value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value as PlayerStatus })} className={inputClass}>
+                  {freeAgentStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </Field>
+            )}
             <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-black uppercase text-slate-300">
               <input type="checkbox" checked={editing.isStarter} onChange={(e) => setEditing({ ...editing, isStarter: e.target.checked })} />
               Starter
@@ -97,8 +148,11 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {data.players.map((player) => (
-          <button key={player.id} onClick={() => setEditing(player)} className="rounded-2xl border border-white/8 bg-slate-950/70 p-4 text-left transition hover:border-cyan-300/25 hover:bg-white/[0.04]">
+        {filtered.length === 0 && (
+          <p className="col-span-2 py-6 text-center text-sm font-semibold text-slate-500">No players match the current filters.</p>
+        )}
+        {filtered.map((player) => (
+          <button key={player.id} onClick={() => openEdit(player)} className="rounded-2xl border border-white/8 bg-slate-950/70 p-4 text-left transition hover:border-cyan-300/25 hover:bg-white/[0.04]">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate font-black text-white">{player.ign}</p>
@@ -124,5 +178,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="mb-1.5 block text-[0.65rem] font-black uppercase text-slate-500">{label}</span>
       {children}
     </label>
+  );
+}
+
+function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} className={cn("rounded-full border px-3 py-1 text-[0.65rem] font-black uppercase transition", active ? "border-cyan-300/50 bg-cyan-300/15 text-cyan-100" : "border-white/10 bg-white/[0.04] text-slate-400 hover:text-slate-200")}>
+      {children}
+    </button>
   );
 }

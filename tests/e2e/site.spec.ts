@@ -158,9 +158,12 @@ test("admin schedule create form exposes every editable field", async ({ page })
   await adminLogin(page);
   await page.goto("/admin/matches");
   await page.getByRole("button", { name: "+ Schedule Match" }).click();
-  for (const label of ["Division", "Home", "Away", "Status", "Date", "Time", "Week", "Score", "Stream URL", "VOD URL"]) {
+  for (const label of ["Division", "Home", "Away", "Status", "Date", "Time", "Week", "Stream URL", "VOD URL"]) {
     await expect(page.getByText(label, { exact: true })).toBeVisible();
   }
+  // Score fields only appear when status is completed
+  await page.getByLabel("Status").selectOption("completed");
+  await expect(page.getByText("Score", { exact: true })).toBeVisible();
 });
 
 test("admin schedule save posts match mutation payload", async ({ page }) => {
@@ -178,6 +181,8 @@ test("admin schedule save posts match mutation payload", async ({ page }) => {
   await page.locator("input[type='number']").nth(1).fill("2");
   await page.locator("input[type='number']").nth(2).fill("1");
   await page.getByRole("button", { name: "Save Match" }).click();
+  // Confirmation dialog appears for completed matches
+  await page.getByRole("button", { name: /Yes, save & recalculate/ }).click();
   await expect.poll(() => payload?.status).toBe("completed");
   expect(payload?.week).toBe(9);
   expect(payload?.homeScore).toBe(2);
@@ -193,7 +198,7 @@ test("admin schedule save failure shows useful message", async ({ page }) => {
   await page.goto("/admin/matches");
   await page.getByRole("button", { name: "+ Schedule Match" }).click();
   await page.getByRole("button", { name: "Save Match" }).click();
-  await expect(page.getByText("Save failed. Check Supabase env and admin session.")).toBeVisible();
+  await expect(page.getByText("Save failed: boom")).toBeVisible();
 });
 
 test("admin roster editor exposes assignment controls", async ({ page }) => {
@@ -379,6 +384,83 @@ test("admin player form shows specific server error text", async ({ page }) => {
   await page.getByText("AzraelP-HRX").first().click();
   await page.getByRole("button", { name: "Save Player" }).click();
   await expect(page.getByText("Invalid enum value for primaryRole")).toBeVisible();
+});
+
+// --- P1 feature tests ---
+
+test("admin matches filter by division shows subset of matches", async ({ page }) => {
+  await adminLogin(page);
+  await page.goto("/admin/matches");
+  await page.getByRole("button", { name: "Solar" }).first().click();
+  await expect(page.getByRole("button", { name: "Solar" }).first()).toHaveClass(/bg-cyan/);
+  // "No matches match the current filters" should not appear — Solar has matches
+  await expect(page.getByText("No matches match the current filters.")).not.toBeVisible();
+});
+
+test("admin matches filter by week narrows list", async ({ page }) => {
+  await adminLogin(page);
+  await page.goto("/admin/matches");
+  await page.getByRole("button", { name: "Wk 1" }).click();
+  await expect(page.getByRole("button", { name: "Wk 1" })).toHaveClass(/bg-cyan/);
+});
+
+test("admin matches completed save shows confirmation dialog", async ({ page }) => {
+  await adminLogin(page);
+  await page.route("**/api/admin/matches", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/admin/matches");
+  await page.getByRole("button", { name: "+ Schedule Match" }).click();
+  await page.getByLabel("Status").selectOption("completed");
+  await page.getByRole("button", { name: "Save Match" }).click();
+  await expect(page.getByText("Saving a completed match will immediately recalculate standings.")).toBeVisible();
+  await page.getByRole("button", { name: /Yes, save & recalculate/ }).click();
+});
+
+test("admin player search filters by IGN", async ({ page }) => {
+  await adminLogin(page);
+  await page.goto("/admin/players");
+  await page.getByPlaceholder("Search IGN or Discord…").fill("AzraelP");
+  await expect(page.getByText("AzraelP-HRX").first()).toBeVisible();
+});
+
+test("admin player search for nonexistent shows empty state", async ({ page }) => {
+  await adminLogin(page);
+  await page.goto("/admin/players");
+  await page.getByPlaceholder("Search IGN or Discord…").fill("xXnonexistentXx");
+  await expect(page.getByText("No players match the current filters.")).toBeVisible();
+});
+
+test("admin player filter free agents shows subset", async ({ page }) => {
+  await adminLogin(page);
+  await page.goto("/admin/players");
+  await page.getByRole("button", { name: "Free Agents" }).click();
+  await expect(page.getByRole("button", { name: "Free Agents" })).toHaveClass(/bg-cyan/);
+});
+
+test("admin player status field shows auto when player has team", async ({ page }) => {
+  await adminLogin(page);
+  await page.goto("/admin/players");
+  await page.getByText("AzraelP-HRX").first().click();
+  // AzraelP-HRX is on a team, so status shows as auto display, not a dropdown
+  await expect(page.getByText("org-affiliated (auto)")).toBeVisible();
+});
+
+test("login API returns 429 after too many failed attempts", async ({ request }) => {
+  // Exhaust the rate limit (11 attempts = over the 10 limit)
+  for (let i = 0; i < 11; i++) {
+    await request.post("/api/admin/login", { data: { password: "wrong-password" } });
+  }
+  const response = await request.post("/api/admin/login", { data: { password: "wrong-password" } });
+  expect(response.status()).toBe(429);
+  const body = await response.json();
+  expect(typeof body.error).toBe("string");
+});
+
+test("admin overview shows activity feed section", async ({ page }) => {
+  await adminLogin(page);
+  await page.goto("/admin");
+  await expect(page.getByText("Activity Feed")).toBeVisible();
 });
 
 async function adminLogin(page: Page) {

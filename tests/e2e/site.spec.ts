@@ -262,6 +262,125 @@ test("unknown team route returns not found", async ({ page }) => {
   expect(response?.status()).toBe(404);
 });
 
+// --- Zod validation tests ---
+
+test("matches API rejects same home and away org", async ({ request, baseURL }) => {
+  // Get a session cookie first
+  const loginRes = await request.post("/api/admin/login", { data: { password: "test-admin-password" } });
+  expect(loginRes.ok()).toBe(true);
+  const response = await request.post("/api/admin/matches", {
+    data: {
+      id: "match-test-1",
+      divisionId: "solar",
+      homeOrgId: "helix-reign",
+      awayOrgId: "helix-reign",
+      scheduledDate: "2025-06-01",
+      scheduledTime: "20:00",
+      status: "scheduled",
+      week: 1,
+    },
+  });
+  expect(response.status()).toBe(400);
+  const body = await response.json();
+  expect(body.error).toContain("awayOrgId");
+});
+
+test("matches API rejects invalid divisionId", async ({ request }) => {
+  await request.post("/api/admin/login", { data: { password: "test-admin-password" } });
+  const response = await request.post("/api/admin/matches", {
+    data: {
+      id: "match-test-2",
+      divisionId: "invalid-division",
+      homeOrgId: "helix-reign",
+      awayOrgId: "obsidian-order",
+      scheduledDate: "2025-06-01",
+      scheduledTime: "20:00",
+      status: "scheduled",
+      week: 1,
+    },
+  });
+  expect(response.status()).toBe(400);
+  const body = await response.json();
+  expect(typeof body.error).toBe("string");
+});
+
+test("matches API rejects completed status without scores", async ({ request }) => {
+  await request.post("/api/admin/login", { data: { password: "test-admin-password" } });
+  const response = await request.post("/api/admin/matches", {
+    data: {
+      id: "match-test-3",
+      divisionId: "solar",
+      homeOrgId: "helix-reign",
+      awayOrgId: "obsidian-order",
+      scheduledDate: "2025-06-01",
+      scheduledTime: "20:00",
+      status: "completed",
+      week: 1,
+    },
+  });
+  expect(response.status()).toBe(400);
+  const body = await response.json();
+  expect(typeof body.error).toBe("string");
+});
+
+test("players API rejects invalid primaryRole", async ({ request }) => {
+  await request.post("/api/admin/login", { data: { password: "test-admin-password" } });
+  const response = await request.post("/api/admin/players", {
+    data: {
+      id: "player-test-1",
+      ign: "TestPlayer",
+      discordUsername: "testplayer",
+      primaryRole: "Healer",
+      status: "free-agent",
+      isStarter: false,
+      isCaptain: false,
+    },
+  });
+  expect(response.status()).toBe(400);
+  const body = await response.json();
+  expect(typeof body.error).toBe("string");
+});
+
+test("players API rejects invalid status", async ({ request }) => {
+  await request.post("/api/admin/login", { data: { password: "test-admin-password" } });
+  const response = await request.post("/api/admin/players", {
+    data: {
+      id: "player-test-2",
+      ign: "TestPlayer",
+      discordUsername: "testplayer",
+      primaryRole: "Mid",
+      status: "banned",
+      isStarter: false,
+      isCaptain: false,
+    },
+  });
+  expect(response.status()).toBe(400);
+  const body = await response.json();
+  expect(typeof body.error).toBe("string");
+});
+
+test("admin match form shows specific server error text", async ({ page }) => {
+  await adminLogin(page);
+  await page.route("**/api/admin/matches", async (route) => {
+    await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "homeOrgId and awayOrgId must differ" }) });
+  });
+  await page.goto("/admin/matches");
+  await page.getByRole("button", { name: "+ Schedule Match" }).click();
+  await page.getByRole("button", { name: "Save Match" }).click();
+  await expect(page.getByText("homeOrgId and awayOrgId must differ")).toBeVisible();
+});
+
+test("admin player form shows specific server error text", async ({ page }) => {
+  await adminLogin(page);
+  await page.route("**/api/admin/players", async (route) => {
+    await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Invalid enum value for primaryRole" }) });
+  });
+  await page.goto("/admin/players");
+  await page.getByText("AzraelP-HRX").first().click();
+  await page.getByRole("button", { name: "Save Player" }).click();
+  await expect(page.getByText("Invalid enum value for primaryRole")).toBeVisible();
+});
+
 async function adminLogin(page: Page) {
   await page.goto("/admin/login");
   await page.getByLabel("Password").fill("test-admin-password");

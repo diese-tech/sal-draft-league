@@ -18,7 +18,7 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_URL: "",
       SUPABASE_SERVICE_ROLE_KEY: "",
     },
-    url: "http://127.0.0.1:3107/lab/editor",
+    url: "http://127.0.0.1:3107/",
     reuseExistingServer: false,
     timeout: 120_000,
   },

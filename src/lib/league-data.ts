@@ -216,12 +216,17 @@ export async function getLeagueData(): Promise<LeagueData> {
       supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     ]);
 
-    if (seasonRes.error || divisionRes.error || orgRes.error || playerRes.error || matchRes.error || standingRes.error || announcementRes.error) {
+    const queryError = seasonRes.error ?? divisionRes.error ?? orgRes.error ?? playerRes.error ?? matchRes.error ?? standingRes.error ?? announcementRes.error;
+    if (queryError) {
+      console.error("getLeagueData: Supabase query error, using mock data:", queryError.message);
       return MOCK_LEAGUE_DATA;
     }
 
     const seasonRow = seasonRes.data as (Season & { start_date?: string; end_date?: string; current_week?: number }) | null;
-    if (!seasonRow || !divisionRes.data?.length || !orgRes.data?.length) return MOCK_LEAGUE_DATA;
+    if (!seasonRow || !divisionRes.data?.length || !orgRes.data?.length) {
+      console.error("getLeagueData: Missing critical Supabase data (season/divisions/orgs), using mock data.");
+      return MOCK_LEAGUE_DATA;
+    }
 
     return {
       season: {
@@ -240,7 +245,8 @@ export async function getLeagueData(): Promise<LeagueData> {
       announcements: (announcementRes.data as DbAnnouncement[]).map(fromDbAnnouncement),
       lastUpdated: new Date().toISOString(),
     };
-  } catch {
+  } catch (err) {
+    console.error("getLeagueData: unexpected error, using mock data:", err);
     return MOCK_LEAGUE_DATA;
   }
 }
@@ -298,12 +304,28 @@ export async function savePlayer(player: LeaguePlayer) {
 }
 
 export async function recalculateAndPersistStandings() {
-  const data = await getLeagueData();
-  const standings = recalcStandings(data);
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase env is missing.");
-  await supabase.from("standings").delete().neq("org_id", "__never__");
+
+  // Fetch live data directly — bypass getLeagueData() to avoid mock fallback corrupting standings
+  const [orgRes, matchRes] = await Promise.all([
+    supabase.from("orgs").select("*").order("name"),
+    supabase.from("matches").select("*").order("scheduled_date").order("scheduled_time"),
+  ]);
+  if (orgRes.error) throw orgRes.error;
+  if (matchRes.error) throw matchRes.error;
+
+  // Reuse the full data fetch for the recalc (standings recalc needs season/divisions too)
+  const data = await getLeagueData();
+  if (data === MOCK_LEAGUE_DATA) throw new Error("Cannot recalculate standings: Supabase data unavailable.");
+
+  const standings = recalcStandings(data);
+  // Upsert first, then remove any orgs that no longer exist to keep the table clean
   const { error } = await supabase.from("standings").upsert(standings.map(toDbStanding));
   if (error) throw error;
+  const currentOrgIds = standings.map((s) => s.orgId);
+  if (currentOrgIds.length > 0) {
+    await supabase.from("standings").delete().not("org_id", "in", `(${currentOrgIds.map((id) => `"${id}"`).join(",")})`);
+  }
   return standings;
 }

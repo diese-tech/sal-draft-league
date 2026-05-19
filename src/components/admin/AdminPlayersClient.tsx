@@ -33,7 +33,8 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
     });
     setSaving(false);
     if (!res.ok) {
-      setMessage("Save failed. Check Supabase env and admin session.");
+      const data = await res.json().catch(() => null) as { error?: string } | null;
+      setMessage(data?.error ? `Save failed: ${data.error}` : "Save failed. Check Supabase env and admin session.");
       return;
     }
     setEditing(null);

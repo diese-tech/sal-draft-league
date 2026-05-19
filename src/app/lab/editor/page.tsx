@@ -1,12 +1,7 @@
-"use client";
-
-import dynamic from "next/dynamic";
-
-const LabEditor = dynamic(
-  () => import("@/components/lab-editor/LabEditor").then((m) => ({ default: m.LabEditor })),
-  { ssr: false },
-);
+import { redirect } from "next/navigation";
+import { LabEditorClient } from "./LabEditorClient";
 
 export default function LabEditorPage() {
-  return <LabEditor />;
+  if (process.env.NODE_ENV === "production") redirect("/");
+  return <LabEditorClient />;
 }

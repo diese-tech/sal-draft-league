@@ -7,7 +7,9 @@ const COOKIE_NAME = "sal_admin_session";
 const MAX_AGE_SECONDS = 60 * 60 * 8;
 
 function secret() {
-  return process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_PASSWORD || "sal-dev-session-secret";
+  const s = process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_PASSWORD;
+  if (!s) throw new Error("ADMIN_SESSION_SECRET or ADMIN_PASSWORD must be set.");
+  return s;
 }
 
 function sign(value: string) {

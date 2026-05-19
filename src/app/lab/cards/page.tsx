@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { DraftPlayerCard } from "@/components/card-lab/DraftPlayerCard";
 import { GhostQueueCard } from "@/components/card-lab/GhostQueueCard";
 import { OrgRosterCard } from "@/components/card-lab/OrgRosterCard";
@@ -6,6 +7,7 @@ import { RosterSlotCard } from "@/components/card-lab/RosterSlotCard";
 import { orgRosters, players, rosterSlotStates } from "@/data/mock-card-lab";
 
 export default function CardLabPage() {
+  if (process.env.NODE_ENV === "production") redirect("/");
   return (
     <main className="relative min-h-screen overflow-hidden px-4 py-8 sm:px-6 lg:px-8">
       <div className="sal-grid pointer-events-none absolute inset-0 opacity-70" />

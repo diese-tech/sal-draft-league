@@ -15,14 +15,37 @@ html {
   background: #05070d;
 }
 
+/* --- Design tokens --- */
+:root {
+  --sal-nav-height: 4rem;
+  /* Motion */
+  --sal-motion: 969ms;
+  /* Hover lifts */
+  --sal-hover-lift: 18px;
+  --sal-button-hover-lift: 4px;
+  /* Glow — nuclear */
+  --sal-glow-opacity: 0.88;
+  --sal-glow-blur: 32px;
+  /* Borders — bright / 45% */
+  --sal-border-opacity: 0.45;
+  /* Radius — pillowy */
+  --sal-card-radius: 20px;
+  --sal-button-radius: 14px;
+}
+
+/* --- Body — smoke background --- */
 body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 18% 0%, rgba(34, 211, 238, 0.16), transparent 28rem),
-    radial-gradient(circle at 84% 12%, rgba(16, 185, 129, 0.14), transparent 28rem),
-    radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.08), transparent 34rem),
-    linear-gradient(135deg, #05070d 0%, #08111f 48%, #05070d 100%);
+    /* Smoke wisps — diffuse atmospheric layers */
+    radial-gradient(ellipse 140% 60% at 10% -5%,  rgba(34, 211, 238, 0.22),  transparent 55%),
+    radial-gradient(ellipse 100% 50% at 88% 5%,   rgba(16, 185, 129, 0.18),  transparent 52%),
+    radial-gradient(ellipse 80%  40% at 50% 0%,   rgba(59, 130, 246, 0.12),  transparent 48%),
+    radial-gradient(ellipse 60%  30% at 22% 35%,  rgba(34, 211, 238, 0.06),  transparent 40%),
+    radial-gradient(ellipse 55%  25% at 78% 28%,  rgba(16, 185, 129, 0.05),  transparent 38%),
+    /* Deep smoke base */
+    linear-gradient(160deg, #050c18 0%, #06101e 30%, #05070d 60%, #040609 100%);
   color: #f8fafc;
 }
 
@@ -31,19 +54,20 @@ body {
   color: white;
 }
 
+/* --- Grid overlay — 100% opacity --- */
 .sal-grid {
   background-image:
-    linear-gradient(rgba(148, 163, 184, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.055) 1px, transparent 1px);
+    linear-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
   background-size: 44px 44px;
-  mask-image: linear-gradient(to bottom, transparent, black 12%, black 82%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, black 10%, black 85%, transparent);
 }
 
+/* --- Flashy keyframes --- */
 @keyframes sal-pulse {
-  0%,
-  100% {
-    opacity: 0.5;
-    transform: scaleX(0.72);
+  0%, 100% {
+    opacity: 0.45;
+    transform: scaleX(0.68);
   }
   50% {
     opacity: 1;
@@ -51,48 +75,129 @@ body {
   }
 }
 
-.sal-active-pulse {
-  animation: sal-pulse 2.2s ease-in-out infinite;
+@keyframes sal-glow-flare {
+  0%, 100% {
+    filter: brightness(1) saturate(1);
+    box-shadow: var(--sal-glow-flare-shadow-base, none);
+  }
+  50% {
+    filter: brightness(1.18) saturate(1.25);
+    box-shadow: var(--sal-glow-flare-shadow-peak, none);
+  }
 }
 
-.sal-glowpanel:hover {
-  transform: translateY(calc(-1 * var(--sal-hover-lift, 4px)));
+@keyframes sal-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-6px); }
 }
 
-.sal-button:hover:not(:active) {
-  transform: translateY(calc(-1 * var(--sal-button-hover-lift, 4px)));
-}
-
-/* --- SAL nav height token --- */
-:root {
-  --sal-nav-height: 4rem;
-}
-
-/* --- Division glow utilities --- */
-.glow-solar {
-  box-shadow: 0 0 28px rgba(249, 115, 22, 0.28), 0 0 6px rgba(251, 191, 36, 0.15);
-}
-.glow-lunar {
-  box-shadow: 0 0 28px rgba(34, 211, 238, 0.28), 0 0 6px rgba(124, 58, 237, 0.15);
-}
-.glow-gaia {
-  box-shadow: 0 0 28px rgba(52, 211, 153, 0.28), 0 0 6px rgba(45, 212, 191, 0.15);
-}
-
-.hover\:glow-solar:hover { box-shadow: 0 0 28px rgba(249, 115, 22, 0.28); }
-.hover\:glow-lunar:hover  { box-shadow: 0 0 28px rgba(34, 211, 238, 0.28); }
-.hover\:glow-gaia:hover   { box-shadow: 0 0 28px rgba(52, 211, 153, 0.28); }
-
-/* --- Division border accent utilities --- */
-.border-solar { border-color: rgba(249, 115, 22, 0.3); }
-.border-lunar  { border-color: rgba(34, 211, 238, 0.3); }
-.border-gaia   { border-color: rgba(52, 211, 153, 0.3); }
-
-/* --- Live pulse animation --- */
 @keyframes live-pulse {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.45; }
+  50%       { opacity: 0.4; }
 }
+
+/* --- Active pulse — flashy / 969ms --- */
+.sal-active-pulse {
+  animation: sal-pulse var(--sal-motion, 969ms) ease-in-out infinite;
+}
+
+/* --- Panel hover lift — 18px --- */
+.sal-glowpanel {
+  transition: transform calc(var(--sal-motion, 969ms) * 0.25) cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow calc(var(--sal-motion, 969ms) * 0.25) ease;
+}
+.sal-glowpanel:hover {
+  transform: translateY(calc(-1 * var(--sal-hover-lift, 18px)));
+}
+
+/* --- Button hover lift — 4px --- */
+.sal-button {
+  transition: transform calc(var(--sal-motion, 969ms) * 0.15) cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow calc(var(--sal-motion, 969ms) * 0.15) ease,
+              filter calc(var(--sal-motion, 969ms) * 0.15) ease;
+}
+.sal-button:hover:not(:active):not(:disabled) {
+  transform: translateY(calc(-1 * var(--sal-button-hover-lift, 4px)));
+}
+.sal-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.sal-button:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* --- Ember button (primary) — orange/amber gradient --- */
+.sal-btn-ember {
+  background: linear-gradient(135deg, #f97316 0%, #fb923c 40%, #fbbf24 100%);
+  border: 1px solid rgba(251, 146, 60, 0.45);
+  color: #fff;
+  box-shadow: 0 0 18px rgba(249, 115, 22, 0.35), 0 0 48px rgba(249, 115, 22, 0.18);
+  --sal-glow-flare-shadow-base: 0 0 18px rgba(249, 115, 22, 0.45), 0 0 48px rgba(249, 115, 22, 0.22);
+  --sal-glow-flare-shadow-peak: 0 0 32px rgba(249, 115, 22, 0.88), 0 0 72px rgba(251, 191, 36, 0.45);
+}
+.sal-btn-ember:hover:not(:disabled) {
+  box-shadow: 0 0 32px rgba(249, 115, 22, 0.88), 0 0 72px rgba(251, 191, 36, 0.45);
+  filter: brightness(1.12) saturate(1.2);
+}
+
+/* --- White-hot button (draft action) — intense bright gradient --- */
+.sal-btn-white-hot {
+  background: linear-gradient(135deg, #fff 0%, #fef3c7 35%, #fed7aa 65%, #ff6b35 100%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  color: #18181b;
+  font-weight: 900;
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.45), 0 0 56px rgba(249, 115, 22, 0.30);
+  --sal-glow-flare-shadow-base: 0 0 24px rgba(255, 255, 255, 0.55), 0 0 56px rgba(249, 115, 22, 0.35);
+  --sal-glow-flare-shadow-peak: 0 0 48px rgba(255, 255, 255, 0.95), 0 0 100px rgba(249, 115, 22, 0.65);
+}
+.sal-btn-white-hot:hover:not(:disabled) {
+  box-shadow: 0 0 48px rgba(255, 255, 255, 0.95), 0 0 100px rgba(249, 115, 22, 0.65);
+  filter: brightness(1.08);
+}
+
+/* --- Nuclear glow division utilities --- */
+.glow-solar {
+  box-shadow:
+    0 0 var(--sal-glow-blur, 32px) rgba(249, 115, 22, var(--sal-glow-opacity, 0.88)),
+    0 0 calc(var(--sal-glow-blur, 32px) * 2) rgba(249, 115, 22, 0.40),
+    0 0 8px rgba(251, 191, 36, 0.55);
+}
+.glow-lunar {
+  box-shadow:
+    0 0 var(--sal-glow-blur, 32px) rgba(34, 211, 238, var(--sal-glow-opacity, 0.88)),
+    0 0 calc(var(--sal-glow-blur, 32px) * 2) rgba(34, 211, 238, 0.40),
+    0 0 8px rgba(124, 58, 237, 0.50);
+}
+.glow-gaia {
+  box-shadow:
+    0 0 var(--sal-glow-blur, 32px) rgba(52, 211, 153, var(--sal-glow-opacity, 0.88)),
+    0 0 calc(var(--sal-glow-blur, 32px) * 2) rgba(52, 211, 153, 0.40),
+    0 0 8px rgba(45, 212, 191, 0.50);
+}
+
+.hover\:glow-solar:hover {
+  box-shadow:
+    0 0 var(--sal-glow-blur, 32px) rgba(249, 115, 22, var(--sal-glow-opacity, 0.88)),
+    0 0 calc(var(--sal-glow-blur, 32px) * 2) rgba(249, 115, 22, 0.40);
+}
+.hover\:glow-lunar:hover {
+  box-shadow:
+    0 0 var(--sal-glow-blur, 32px) rgba(34, 211, 238, var(--sal-glow-opacity, 0.88)),
+    0 0 calc(var(--sal-glow-blur, 32px) * 2) rgba(34, 211, 238, 0.40);
+}
+.hover\:glow-gaia:hover {
+  box-shadow:
+    0 0 var(--sal-glow-blur, 32px) rgba(52, 211, 153, var(--sal-glow-opacity, 0.88)),
+    0 0 calc(var(--sal-glow-blur, 32px) * 2) rgba(52, 211, 153, 0.40);
+}
+
+/* --- Division border accent utilities — 45% opacity --- */
+.border-solar { border-color: rgba(249, 115, 22,  var(--sal-border-opacity, 0.45)); }
+.border-lunar  { border-color: rgba(34,  211, 238, var(--sal-border-opacity, 0.45)); }
+.border-gaia   { border-color: rgba(52,  211, 153, var(--sal-border-opacity, 0.45)); }
+
+/* --- Live pulse animation --- */
 .live-pulse {
   animation: live-pulse 1.6s ease-in-out infinite;
 }

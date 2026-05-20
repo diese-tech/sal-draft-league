@@ -14,14 +14,14 @@ function PlayerRow({ player, divisionId }: { player: LeaguePlayer; divisionId: D
     <Link
       href={`/players/${player.id}`}
       className={cn(
-        "group relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/72 p-3 shadow-xl shadow-black/30 backdrop-blur transition duration-300",
+        "group relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/72 px-3 pb-4 pt-3 shadow-xl shadow-black/30 backdrop-blur transition duration-300",
         "hover:-translate-y-0.5 hover:border-cyan-300/25 hover:bg-slate-900/85",
         player.isCaptain && "border-orange-300/35 shadow-orange-500/10",
       )}
     >
-      {/* Banner gradient strip */}
-      <div className={cn("absolute inset-x-0 top-0 h-10 bg-gradient-to-br opacity-60", player.avatarGradient)} />
-      <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-white/8 to-slate-950/80" />
+      {/* Banner gradient strip — gradient-to-r avoids top-left color blob artifact */}
+      <div className={cn("absolute inset-x-0 top-0 h-10 bg-gradient-to-r opacity-35", player.avatarGradient)} />
+      <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-white/6 to-slate-950/80" />
 
       <div className="relative flex items-center gap-3">
         <AvatarMark
@@ -50,7 +50,7 @@ function PlayerRow({ player, divisionId }: { player: LeaguePlayer; divisionId: D
 
       {/* Stats row */}
       {player.stats && player.stats.gamesPlayed > 0 && (
-        <div className="relative mt-3 flex items-center gap-2 border-t border-white/10 pt-2.5">
+        <div className="relative mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pb-0.5 pt-2.5">
           {[
             { label: "K", value: player.stats.kills },
             { label: "D", value: player.stats.deaths },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin-auth";
 import { generateCaptainToken, getDraftRoom } from "@/lib/draft-data";
+import { writeAuditLog } from "@/lib/league-data";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -14,5 +15,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const token = await generateCaptainToken(id, orgId);
     tokens[orgId] = token;
   }
+  await writeAuditLog("draft_tokens_generated", "draft_room", id, { orgCount: Object.keys(tokens).length });
   return NextResponse.json({ tokens });
 }

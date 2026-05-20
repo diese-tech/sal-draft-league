@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAdminRequest } from "@/lib/admin-auth";
 import { createDraftRoom, getDraftRooms } from "@/lib/draft-data";
+import { writeAuditLog } from "@/lib/league-data";
 
 const createSchema = z.object({
   id: z.string().min(1).max(64).regex(/^[a-z0-9-]+$/, "id must be lowercase alphanumeric with hyphens"),
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
   if (!result.success) return NextResponse.json({ error: result.error.issues.map((i) => i.message).join("; ") }, { status: 400 });
   try {
     const room = await createDraftRoom(result.data);
+    await writeAuditLog("draft_room_created", "draft_room", result.data.id, { divisionId: result.data.divisionId, rounds: result.data.rounds });
     return NextResponse.json({ room }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to create draft room.";

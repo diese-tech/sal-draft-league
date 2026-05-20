@@ -306,7 +306,7 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
-async function writeAuditLog(action: string, entityType: string | null, entityId: string | null, payload: unknown) {
+export async function writeAuditLog(action: string, entityType: string | null, entityId: string | null, payload: unknown) {
   const supabase = getSupabaseServerClient();
   if (!supabase) return;
   await supabase.from("admin_audit_log").insert({ action, entity_type: entityType, entity_id: entityId, payload });

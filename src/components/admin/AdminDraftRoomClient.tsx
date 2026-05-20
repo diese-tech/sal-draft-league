@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { DraftState } from "@/types/draft";
 import type { LeaguePlayer, Org } from "@/types/league";
@@ -19,7 +19,28 @@ export function AdminDraftRoomClient({ state, orgs, players }: {
   players: LeaguePlayer[];
 }) {
   const router = useRouter();
-  const { room, picks, pickSequence, currentOrgId, totalPicks } = state;
+  const [liveState, setLiveState] = useState(state);
+
+  useEffect(() => {
+    setLiveState(state); // sync if parent re-renders
+  }, [state]);
+
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/draft/${state.room.id}`);
+        if (res.ok) {
+          const data = await res.json() as { state: typeof state };
+          setLiveState(data.state);
+        }
+      } catch {
+        // network blip — ignore, next poll will catch up
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [state.room.id]);
+
+  const { room, picks, pickSequence, currentOrgId, totalPicks } = liveState;
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<Record<string, string> | null>(null);

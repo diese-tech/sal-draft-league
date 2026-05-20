@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { isAdminRequest } from "@/lib/admin-auth";
-import { savePlayer } from "@/lib/league-data";
+import { savePlayer, writeAuditLog } from "@/lib/league-data";
 
 const playerSchema = z.object({
   id: z.string().min(1),
@@ -54,5 +54,6 @@ export async function POST(request: NextRequest) {
   }
 
   if (imported > 0) revalidateTag("league-data", {});
+  await writeAuditLog("players_imported", "player_import", null, { imported, errorCount: errors.length });
   return NextResponse.json({ imported, errors });
 }

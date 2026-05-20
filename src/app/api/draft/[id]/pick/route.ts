@@ -3,6 +3,9 @@ import { z } from "zod";
 import { buildDraftState, getDraftPicks, recordPick, updateDraftRoom } from "@/lib/draft-data";
 import { getCaptainSessionFromRequest } from "@/lib/captain-auth";
 import { buildPickSequence } from "@/types/draft";
+import { getLeagueData, writeAuditLog } from "@/lib/league-data";
+
+const DIVISION_TIER: Record<string, number> = { solar: 1, lunar: 2, gaia: 3 };
 
 const pickSchema = z.object({
   playerId: z.string().min(1),
@@ -36,6 +39,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "It is not your turn to pick." }, { status: 403 });
   }
 
+  // Division eligibility: captain cannot draft from a higher-tier division
+  const roomTier = DIVISION_TIER[room.divisionId] ?? 999;
+  const leagueData = await getLeagueData();
+  const playerData = leagueData.players.find((p) => p.id === playerId);
+  if (playerData?.divisionId) {
+    const playerTier = DIVISION_TIER[playerData.divisionId] ?? 999;
+    if (playerTier < roomTier) {
+      return NextResponse.json(
+        { error: `Cannot draft a ${playerData.divisionId} division player in a ${room.divisionId} draft.` },
+        { status: 400 },
+      );
+    }
+  }
+
   // Verify player hasn't already been picked
   const existingPicks = await getDraftPicks(id);
   if (existingPicks.some((p) => p.playerId === playerId)) {
@@ -53,6 +70,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     status: isComplete ? "complete" : "active",
     pickStartedAt: isComplete ? null : now,
     completedAt: isComplete ? now : null,
+  });
+
+  await writeAuditLog("draft_pick", "draft_pick", `${id}-${pickNumber}`, {
+    draftRoomId: id,
+    pickNumber,
+    orgId: session.orgId,
+    playerId,
+    isComplete,
   });
 
   return NextResponse.json({ ok: true, pickNumber, complete: isComplete });

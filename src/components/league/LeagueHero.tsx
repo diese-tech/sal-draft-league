@@ -1,6 +1,5 @@
 import type { Season } from "@/types/league";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
 import { HeroVideoLoop } from "./HeroVideoLoop";
 
 // Drop clip URLs here as they become available.
@@ -9,20 +8,6 @@ const HERO_CLIPS: string[] = [
   "https://pub-b669f1a9eb0f4e0da6e4159b0152d6c2.r2.dev/inspectorcody%20penta.mp4",
   "https://pub-b669f1a9eb0f4e0da6e4159b0152d6c2.r2.dev/tes%20quadra.mp4",
 ];
-
-const seasonStatusLabel = {
-  "pre-season": "Pre-Season",
-  active: "Season Active",
-  "post-season": "Post-Season",
-  offseason: "Off-Season",
-};
-
-const seasonStatusStyle = {
-  "pre-season": "border-white/10 bg-white/[0.04] text-slate-400",
-  active: "border-emerald-300/40 bg-emerald-300/15 text-emerald-100",
-  "post-season": "border-violet-300/40 bg-violet-300/15 text-violet-100",
-  offseason: "border-white/10 bg-white/[0.04] text-slate-400",
-};
 
 export function LeagueHero({ season, liveMatchName }: { season: Season; liveMatchName?: string }) {
   return (
@@ -73,27 +58,8 @@ export function LeagueHero({ season, liveMatchName }: { season: Season; liveMatc
           </div>
         )}
 
-        {/* Crest + identity — left-anchored, max half-width */}
+        {/* Identity — left-anchored, max half-width */}
         <div className="flex max-w-xl flex-col">
-          <div className="mb-6 grid h-14 w-14 place-items-center rounded-2xl border border-cyan-400/60 bg-gradient-to-br from-cyan-400/50 via-cyan-300/15 to-fuchsia-500/45 text-sm font-black text-cyan-100 shadow-2xl shadow-cyan-500/25">
-            SAL
-          </div>
-
-          {/* Status badges */}
-          <div className="mb-5 flex items-center gap-2">
-            <span
-              className={cn(
-                "rounded-xl border px-3 py-1 text-xs font-black uppercase",
-                seasonStatusStyle[season.status],
-              )}
-            >
-              {seasonStatusLabel[season.status]}
-            </span>
-            <span className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-black uppercase text-slate-400">
-              Week {season.currentWeek}
-            </span>
-          </div>
-
           {/* Main title */}
           <h1 className="mb-2 text-5xl font-black leading-tight tracking-tight text-white sm:text-6xl lg:text-7xl">
             Serpent{" "}

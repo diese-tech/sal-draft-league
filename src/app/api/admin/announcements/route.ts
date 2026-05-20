@@ -6,7 +6,7 @@ import { saveAnnouncement } from "@/lib/league-data";
 const announcementSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1).max(200),
-  body: z.string().min(1).max(2000),
+  body: z.string().min(1).max(10000),
   category: z.enum(["general", "rules", "draft", "results", "admin"]),
   pinned: z.boolean(),
   createdAt: z.string().optional(),

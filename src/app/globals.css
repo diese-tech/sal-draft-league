@@ -201,3 +201,16 @@ body {
 .live-pulse {
   animation: live-pulse 1.6s ease-in-out infinite;
 }
+
+/* --- Ticker scroll animation --- */
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.sal-ticker {
+  animation: ticker-scroll 55s linear infinite;
+  will-change: transform;
+}
+.sal-ticker:hover {
+  animation-play-state: paused;
+}

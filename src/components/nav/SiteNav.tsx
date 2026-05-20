@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: "/standings", label: "Standings" },
   { href: "/schedule", label: "Schedule" },
   { href: "/teams", label: "Teams" },
+  { href: "/watch", label: "Watch" },
 ];
 
 export function SiteNav() {
@@ -18,7 +19,7 @@ export function SiteNav() {
   const isActive = (href: string, exact?: boolean) => exact ? pathname === href : pathname.startsWith(href);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-cyan-300/10 bg-slate-950/88 shadow-2xl shadow-cyan-950/20 backdrop-blur">
+    <header className="fixed inset-x-0 top-8 z-50 h-16 border-b border-cyan-300/10 bg-slate-950/88 shadow-2xl shadow-cyan-950/20 backdrop-blur">
       <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="group flex items-center gap-3">
           <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-cyan-500/40 bg-black shadow-lg shadow-cyan-950/40 transition-all duration-200 group-hover:border-cyan-400/60 group-hover:shadow-cyan-500/20">

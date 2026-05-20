@@ -10,7 +10,8 @@ export function NavShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       {!hideSiteNav && <SiteNav />}
-      <div className={!hideSiteNav ? "pt-16" : undefined}>{children}</div>
+      {/* pt-24 = ticker (32px) + nav (64px) */}
+      <div className={!hideSiteNav ? "pt-24" : undefined}>{children}</div>
     </>
   );
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { NavShell } from "@/components/nav/NavShell";
+import { TickerBar } from "@/components/nav/TickerBar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,6 +33,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className="font-sans antialiased">
+        {/* Ticker sits at top-0, nav sits at top-8 (32px below) */}
+        <TickerBar />
         <NavShell>{children}</NavShell>
       </body>
     </html>

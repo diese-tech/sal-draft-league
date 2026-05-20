@@ -4,6 +4,7 @@ import { DivisionCard } from "@/components/league/DivisionCard";
 import { MatchCard } from "@/components/league/MatchCard";
 import { StandingsTable } from "@/components/league/StandingsTable";
 import { AnnouncementCard } from "@/components/league/AnnouncementCard";
+import { LiveMatchFeature } from "@/components/league/LiveMatchFeature";
 import { getLeagueData } from "@/lib/league-data";
 import { cn } from "@/lib/utils";
 
@@ -23,8 +24,10 @@ export default async function HomePage() {
     .slice(0, 4);
 
   const getOrg = (id: string) => orgs.find((o) => o.id === id)!;
-  const liveMatchName = liveMatches.length > 0
-    ? `${getOrg(liveMatches[0].homeOrgId).name} vs ${getOrg(liveMatches[0].awayOrgId).name}`
+  const liveMatch = liveMatches[0] ?? null;
+  const upcomingMatch = upcomingMatches[0] ?? null;
+  const liveMatchName = liveMatch
+    ? `${getOrg(liveMatch.homeOrgId).name} vs ${getOrg(liveMatch.awayOrgId).name}`
     : undefined;
 
   return (
@@ -33,12 +36,15 @@ export default async function HomePage() {
 
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:grid-cols-[1.45fr_0.9fr]">
         <div>
-          <SectionHeader eyebrow="Right Now" title={liveMatches.length > 0 ? "Live Matches" : "League Pulse"} />
-          <div className="grid gap-3">
-            {(liveMatches.length > 0 ? liveMatches : upcomingMatches.slice(0, 1)).map((m) => (
-              <MatchCard key={m.id} match={m} homeOrg={getOrg(m.homeOrgId)} awayOrg={getOrg(m.awayOrgId)} />
-            ))}
-          </div>
+          <SectionHeader eyebrow="Right Now" title={liveMatch ? "Live Matches" : "League Pulse"} />
+          <LiveMatchFeature
+            liveMatch={liveMatch}
+            upcomingMatch={upcomingMatch}
+            liveMatchHomeOrg={liveMatch ? getOrg(liveMatch.homeOrgId) : null}
+            liveMatchAwayOrg={liveMatch ? getOrg(liveMatch.awayOrgId) : null}
+            upcomingHomeOrg={upcomingMatch ? getOrg(upcomingMatch.homeOrgId) : null}
+            upcomingAwayOrg={upcomingMatch ? getOrg(upcomingMatch.awayOrgId) : null}
+          />
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-cyan-300/15 bg-slate-950/78 shadow-2xl shadow-cyan-950/20 backdrop-blur">

@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: "/standings", label: "Standings" },
   { href: "/schedule", label: "Schedule" },
   { href: "/teams", label: "Teams" },
+  { href: "/players", label: "Players" },
   { href: "/watch", label: "Watch" },
 ];
 

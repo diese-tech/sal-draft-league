@@ -1,4 +1,5 @@
 import type { LeaguePlayer, DivisionId } from "@/types/league";
+import Link from "next/link";
 import { AvatarMark, RolePill } from "@/components/card-lab/ui";
 import { cn } from "@/lib/utils";
 
@@ -10,7 +11,8 @@ const divisionAccentText: Record<DivisionId, string> = {
 
 function PlayerRow({ player, divisionId }: { player: LeaguePlayer; divisionId: DivisionId }) {
   return (
-    <article
+    <Link
+      href={`/players/${player.id}`}
       className={cn(
         "group relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/72 p-3 shadow-xl shadow-black/30 backdrop-blur transition duration-300",
         "hover:-translate-y-0.5 hover:border-cyan-300/25 hover:bg-slate-900/85",
@@ -63,7 +65,7 @@ function PlayerRow({ player, divisionId }: { player: LeaguePlayer; divisionId: D
           </span>
         </div>
       )}
-    </article>
+    </Link>
   );
 }
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -29,6 +30,9 @@ export default function AdminLoginPage() {
 
   return (
     <main className="grid min-h-screen place-items-center px-4">
+      <Link href="/" className="absolute left-4 top-12 flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-black uppercase text-slate-400 transition hover:border-white/20 hover:text-slate-200 sm:left-6">
+        ← Back to Site
+      </Link>
       <form
         onSubmit={submit}
         className="w-full max-w-md overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950/88 shadow-2xl shadow-cyan-950/25 backdrop-blur"

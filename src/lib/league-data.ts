@@ -1,5 +1,6 @@
 import { MOCK_LEAGUE_DATA } from "@/data/mock-league";
 import type { Announcement, Division, LeagueData, LeaguePlayer, Match, Org, OrgStanding, Season } from "@/types/league";
+import type { FormField, Registration } from "@/types/auth";
 import { recalcStandings } from "@/lib/standings";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
@@ -393,4 +394,153 @@ export async function recalculateAndPersistStandings() {
   }
   await writeAuditLog("recalculate_standings", "standings", null, { orgCount: standings.length });
   return standings;
+}
+
+// ─── Form Fields ─────────────────────────────────────────────────────────────
+
+function fromDbFormField(row: Record<string, unknown>): FormField {
+  return {
+    id: row.id as string,
+    key: row.key as string,
+    label: row.label as string,
+    fieldType: row.field_type as FormField["fieldType"],
+    required: row.required as boolean,
+    fieldOrder: row.field_order as number,
+    options: row.options as string[] | undefined,
+    locked: row.locked as boolean,
+    hidden: row.hidden as boolean,
+    placeholder: row.placeholder as string | undefined,
+    validationHint: row.validation_hint as string | undefined,
+  };
+}
+
+export async function getFormFields(): Promise<FormField[]> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("form_fields")
+    .select("*")
+    .order("field_order");
+  if (error) throw error;
+  return (data ?? []).map(fromDbFormField);
+}
+
+export async function saveFormField(field: FormField): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase.from("form_fields").upsert({
+    id: field.id,
+    key: field.key,
+    label: field.label,
+    field_type: field.fieldType,
+    required: field.required,
+    field_order: field.fieldOrder,
+    options: field.options ?? null,
+    locked: field.locked,
+    hidden: field.hidden,
+    placeholder: field.placeholder ?? null,
+    validation_hint: field.validationHint ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function deleteFormField(id: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase.from("form_fields").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ─── Registrations ───────────────────────────────────────────────────────────
+
+function fromDbRegistration(row: Record<string, unknown>): Registration {
+  return {
+    id: row.id as string,
+    discordId: row.discord_id as string,
+    discordUsername: row.discord_username as string,
+    discordDisplayName: row.discord_display_name as string | undefined,
+    seasonId: row.season_id as string | undefined,
+    playerId: row.player_id as string | undefined,
+    formData: (row.form_data as Record<string, string>) ?? {},
+    status: row.status as Registration["status"],
+    createdAt: row.created_at as string,
+    reviewedAt: row.reviewed_at as string | undefined,
+    reviewerNote: row.reviewer_note as string | undefined,
+  };
+}
+
+export async function getRegistrations(): Promise<Registration[]> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("registrations")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(fromDbRegistration);
+}
+
+export async function getRegistrationByDiscordId(discordId: string): Promise<Registration | null> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("registrations")
+    .select("*")
+    .eq("discord_id", discordId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? fromDbRegistration(data) : null;
+}
+
+export async function createRegistration(reg: Omit<Registration, "status" | "createdAt">): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase.from("registrations").insert({
+    id: reg.id,
+    discord_id: reg.discordId,
+    discord_username: reg.discordUsername,
+    discord_display_name: reg.discordDisplayName ?? null,
+    season_id: reg.seasonId ?? null,
+    player_id: reg.playerId ?? null,
+    form_data: reg.formData,
+  });
+  if (error) throw error;
+}
+
+export async function updateRegistrationStatus(
+  id: string,
+  status: Registration["status"],
+  reviewerNote?: string,
+): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase
+    .from("registrations")
+    .update({ status, reviewer_note: reviewerNote ?? null, reviewed_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+  await writeAuditLog("update_registration", "registration", id, { status, reviewerNote });
+}
+
+export async function claimPlayerProfile(discordId: string, playerId: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase
+    .from("players")
+    .update({ discord_id: discordId, profile_claimed: true })
+    .eq("id", playerId);
+  if (error) throw error;
+  await writeAuditLog("claim_player_profile", "player", playerId, { discordId });
+}
+
+export async function getPlayerByDiscordId(discordId: string): Promise<LeaguePlayer | null> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("players")
+    .select("*")
+    .eq("discord_id", discordId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? fromDbPlayer(data) : null;
 }

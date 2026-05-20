@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BRAND_ASSETS } from "@/lib/assets";
 import { cn } from "@/lib/utils";
+import { AuthButton } from "@/components/auth/AuthButton";
 
 const NAV_LINKS = [
   { href: "/", label: "Home", exact: true, mobileHide: true },
@@ -53,17 +54,20 @@ export function SiteNav() {
           })}
         </nav>
 
-        <Link
-          href="/admin"
-          className={cn(
-            "hidden shrink-0 rounded-xl border px-3 py-1.5 text-xs font-black uppercase transition sm:block",
-            pathname.startsWith("/admin")
-              ? "border-emerald-300/40 bg-emerald-300/15 text-emerald-100"
-              : "border-white/10 bg-white/[0.04] text-slate-500 hover:bg-white/[0.08] hover:text-slate-300",
-          )}
-        >
-          Admin
-        </Link>
+        <div className="flex items-center gap-2">
+          <AuthButton />
+          <Link
+            href="/admin"
+            className={cn(
+              "hidden shrink-0 rounded-xl border px-3 py-1.5 text-xs font-black uppercase transition sm:block",
+              pathname.startsWith("/admin")
+                ? "border-emerald-300/40 bg-emerald-300/15 text-emerald-100"
+                : "border-white/10 bg-white/[0.04] text-slate-500 hover:bg-white/[0.08] hover:text-slate-300",
+            )}
+          >
+            Admin
+          </Link>
+        </div>
       </div>
     </header>
   );

@@ -14,6 +14,8 @@ const ADMIN_NAV = [
   { href: "/admin/draft", label: "Draft" },
   { href: "/admin/announcements", label: "Announcements" },
   { href: "/admin/import", label: "Import" },
+  { href: "/admin/registrations", label: "Registrations" },
+  { href: "/admin/form-fields", label: "Form Fields" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

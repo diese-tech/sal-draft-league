@@ -6,8 +6,8 @@ import { HeroVideoLoop } from "./HeroVideoLoop";
 // Drop clip URLs here as they become available.
 // Poster image (/assets/hero-poster.jpg) shows until the first clip loads.
 const HERO_CLIPS: string[] = [
-  // "/assets/clips/play-01.webm",
-  // "/assets/clips/play-02.webm",
+  "https://pub-b669f1a9eb0f4e0da6e4159b0152d6c2.r2.dev/inspectorcody%20penta.mp4",
+  "https://pub-b669f1a9eb0f4e0da6e4159b0152d6c2.r2.dev/tes%20quadra.mp4",
 ];
 
 const seasonStatusLabel = {

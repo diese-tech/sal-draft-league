@@ -49,7 +49,7 @@ async function applyConfig(page: Page, patch: Record<string, unknown>) {
   const raw = await page.getByTestId("config-json").inputValue();
   const config = JSON.parse(raw) as Record<string, Record<string, unknown>>;
   for (const [section, values] of Object.entries(patch)) {
-    config[section] = { ...config[section], ...values };
+    config[section] = Object.assign({}, config[section] ?? {}, values as Record<string, unknown>);
   }
   await page.getByTestId("json-import").fill(JSON.stringify(config));
   await page.getByTestId("apply-json").click();

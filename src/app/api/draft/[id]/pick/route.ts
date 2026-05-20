@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { buildDraftState, getDraftPicks, recordPick, updateDraftRoom } from "@/lib/draft-data";
+import { buildDraftState, getDraftPicks, recordPick, removePlayerFromAllShortlists, updateDraftRoom } from "@/lib/draft-data";
 import { getCaptainSessionFromRequest } from "@/lib/captain-auth";
 import { buildPickSequence } from "@/types/draft";
 import { getLeagueData, writeAuditLog } from "@/lib/league-data";
@@ -61,6 +61,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const pickNumber = room.currentPickIndex + 1;
   await recordPick(id, pickNumber, session.orgId, playerId);
+  await removePlayerFromAllShortlists(id, playerId);
 
   const nextIndex = room.currentPickIndex + 1;
   const isComplete = nextIndex >= sequence.length;

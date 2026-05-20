@@ -16,54 +16,74 @@ function sign(value: string) {
   return createHmac("sha256", secret()).update(value).digest("hex");
 }
 
-function makeSessionValue() {
-  const payload = JSON.stringify({ role: "admin", exp: Date.now() + MAX_AGE_SECONDS * 1000 });
+export interface AdminSessionPayload {
+  discordId: string;
+  role: "super_admin" | "admin";
+  exp: number;
+}
+
+export function makeAdminSession(discordId: string, role: "super_admin" | "admin") {
+  const payload = JSON.stringify({ discordId, role, exp: Date.now() + MAX_AGE_SECONDS * 1000 });
   const encoded = Buffer.from(payload).toString("base64url");
   return `${encoded}.${sign(encoded)}`;
 }
 
-function verifySessionValue(value?: string) {
-  if (!value) return false;
+export function verifyAdminSession(value?: string): AdminSessionPayload | null {
+  if (!value) return null;
   const [encoded, signature] = value.split(".");
-  if (!encoded || !signature) return false;
+  if (!encoded || !signature) return null;
   const expected = sign(encoded);
   const expectedBuffer = Buffer.from(expected);
   const actualBuffer = Buffer.from(signature);
-  if (expectedBuffer.length !== actualBuffer.length || !timingSafeEqual(expectedBuffer, actualBuffer)) return false;
+  if (expectedBuffer.length !== actualBuffer.length || !timingSafeEqual(expectedBuffer, actualBuffer)) return null;
 
   try {
-    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as { exp?: number };
-    return typeof payload.exp === "number" && payload.exp > Date.now();
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as {
+      discordId?: unknown;
+      role?: unknown;
+      exp?: unknown;
+    };
+    if (typeof payload.exp !== "number" || payload.exp <= Date.now()) return null;
+    if (typeof payload.discordId !== "string") return null;
+    if (payload.role !== "super_admin" && payload.role !== "admin") return null;
+    return { discordId: payload.discordId, role: payload.role, exp: payload.exp };
   } catch {
-    return false;
+    return null;
   }
 }
 
-export async function isAdminSession() {
+export async function getAdminSession(): Promise<AdminSessionPayload | null> {
   const store = await cookies();
-  return verifySessionValue(store.get(COOKIE_NAME)?.value);
+  return verifyAdminSession(store.get(COOKIE_NAME)?.value);
 }
 
-export async function requireAdmin() {
-  if (!(await isAdminSession())) redirect("/admin/login");
+export async function isAdminSession(): Promise<boolean> {
+  return (await getAdminSession()) !== null;
 }
 
-export function isAdminRequest(request: NextRequest) {
-  return verifySessionValue(request.cookies.get(COOKIE_NAME)?.value);
+export async function requireAdmin(): Promise<AdminSessionPayload> {
+  const session = await getAdminSession();
+  if (!session) redirect("/admin/login");
+  return session;
 }
 
-export function verifyAdminPassword(password: string) {
-  const configured = process.env.ADMIN_PASSWORD;
-  if (!configured) return false;
-  const configuredBuffer = Buffer.from(configured);
-  const actualBuffer = Buffer.from(password);
-  return configuredBuffer.length === actualBuffer.length && timingSafeEqual(configuredBuffer, actualBuffer);
+export function getAdminRequestSession(request: NextRequest): AdminSessionPayload | null {
+  return verifyAdminSession(request.cookies.get(COOKIE_NAME)?.value);
 }
 
-export function adminCookie() {
+export function isAdminRequest(request: NextRequest): boolean {
+  return getAdminRequestSession(request) !== null;
+}
+
+export function isSuperAdminRequest(request: NextRequest): boolean {
+  const session = getAdminRequestSession(request);
+  return session?.role === "super_admin";
+}
+
+export function adminCookie(discordId: string, role: "super_admin" | "admin") {
   return {
     name: COOKIE_NAME,
-    value: makeSessionValue(),
+    value: makeAdminSession(discordId, role),
     options: {
       httpOnly: true,
       sameSite: "lax" as const,

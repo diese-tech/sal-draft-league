@@ -69,6 +69,21 @@ export function AdminDraftRoomClient({ state, orgs, players }: {
     return true;
   }
 
+  async function callUndo() {
+    setBusy(true);
+    setMessage("");
+    const res = await fetch(`/api/admin/draft/${room.id}/undo`, { method: "POST" });
+    setBusy(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => null) as { error?: string } | null;
+      setMessage(data?.error ?? "Undo failed.");
+      return;
+    }
+    const data = await res.json() as { state: typeof state };
+    if (data.state) setLiveState(data.state);
+    router.refresh();
+  }
+
   async function saveOrder() {
     if (baseOrderDraft.length === 0) { setMessage("Add at least one org to the pick order."); return; }
     setBusy(true);
@@ -124,6 +139,7 @@ export function AdminDraftRoomClient({ state, orgs, players }: {
           {isActive && <AdminBtn onClick={() => call("pause")} disabled={busy} variant="yellow">Pause</AdminBtn>}
           {isPaused && <AdminBtn onClick={() => call("resume")} disabled={busy}>Resume</AdminBtn>}
           {(isActive || isPaused) && <AdminBtn onClick={() => call("skip")} disabled={busy} variant="red">Skip Pick</AdminBtn>}
+          {isActive && liveState.picks.length > 0 && <AdminBtn onClick={() => callUndo()} disabled={busy} variant="yellow">Undo Pick</AdminBtn>}
         </div>
       </div>
       {message && <p className="text-sm font-semibold text-orange-200">{message}</p>}

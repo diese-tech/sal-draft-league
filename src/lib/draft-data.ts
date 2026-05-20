@@ -202,3 +202,152 @@ export async function verifyCaptainToken(token: string): Promise<{ draftRoomId: 
   if (new Date(data.expires_at as string) < new Date()) return null;
   return { draftRoomId: data.draft_room_id as string, orgId: data.org_id as string };
 }
+
+// ---- Shortlist -----------------------------------------------------------
+
+export interface ShortlistEntry {
+  playerId: string;
+  position: number;
+}
+
+export async function getShortlist(draftRoomId: string, orgId: string): Promise<ShortlistEntry[]> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("captain_shortlists")
+    .select("player_id, position")
+    .eq("draft_room_id", draftRoomId)
+    .eq("org_id", orgId)
+    .order("position", { ascending: true });
+  if (error) { console.error("getShortlist:", error.message); return []; }
+  return (data as Array<{ player_id: string; position: number }>).map((r) => ({
+    playerId: r.player_id,
+    position: r.position,
+  }));
+}
+
+export async function addToShortlist(draftRoomId: string, orgId: string, playerId: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  // Get next position
+  const { data } = await supabase
+    .from("captain_shortlists")
+    .select("position")
+    .eq("draft_room_id", draftRoomId)
+    .eq("org_id", orgId)
+    .order("position", { ascending: false })
+    .limit(1);
+  const nextPos = data && data.length > 0 ? (data[0] as { position: number }).position + 1 : 0;
+  const { error } = await supabase.from("captain_shortlists").insert({
+    draft_room_id: draftRoomId,
+    org_id: orgId,
+    player_id: playerId,
+    position: nextPos,
+  });
+  if (error) throw error;
+}
+
+export async function removeFromShortlist(draftRoomId: string, orgId: string, playerId: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  await supabase
+    .from("captain_shortlists")
+    .delete()
+    .eq("draft_room_id", draftRoomId)
+    .eq("org_id", orgId)
+    .eq("player_id", playerId);
+  // Renumber remaining
+  const { data } = await supabase
+    .from("captain_shortlists")
+    .select("id, position")
+    .eq("draft_room_id", draftRoomId)
+    .eq("org_id", orgId)
+    .order("position", { ascending: true });
+  if (data) {
+    for (let i = 0; i < data.length; i++) {
+      await supabase
+        .from("captain_shortlists")
+        .update({ position: i })
+        .eq("id", (data[i] as { id: string }).id);
+    }
+  }
+}
+
+export async function reorderShortlist(draftRoomId: string, orgId: string, playerIds: string[]): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  for (let i = 0; i < playerIds.length; i++) {
+    await supabase
+      .from("captain_shortlists")
+      .update({ position: i })
+      .eq("draft_room_id", draftRoomId)
+      .eq("org_id", orgId)
+      .eq("player_id", playerIds[i]);
+  }
+}
+
+export async function removePlayerFromAllShortlists(draftRoomId: string, playerId: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return;
+  await supabase
+    .from("captain_shortlists")
+    .delete()
+    .eq("draft_room_id", draftRoomId)
+    .eq("player_id", playerId);
+}
+
+export async function getTopShortlistPick(draftRoomId: string, orgId: string): Promise<string | null> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return null;
+  // Get shortlist ordered by position
+  const { data: shortlist } = await supabase
+    .from("captain_shortlists")
+    .select("player_id")
+    .eq("draft_room_id", draftRoomId)
+    .eq("org_id", orgId)
+    .order("position", { ascending: true });
+  if (!shortlist || shortlist.length === 0) return null;
+  // Get already-drafted player IDs
+  const { data: picks } = await supabase
+    .from("draft_picks")
+    .select("player_id")
+    .eq("draft_room_id", draftRoomId);
+  const draftedIds = new Set((picks ?? []).map((p: { player_id: string }) => p.player_id));
+  // Return first shortlisted player not yet drafted
+  for (const entry of shortlist as Array<{ player_id: string }>) {
+    if (!draftedIds.has(entry.player_id)) return entry.player_id;
+  }
+  return null;
+}
+
+// ---- Undo ----------------------------------------------------------------
+
+export async function undoLastPick(draftRoomId: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+
+  const room = await getDraftRoom(draftRoomId);
+  if (!room) throw new Error("Draft room not found.");
+  if (room.currentPickIndex === 0) throw new Error("No picks to undo.");
+  if (room.status !== "active") throw new Error("Draft is not active.");
+
+  // Get last pick
+  const { data: lastPick, error: pickError } = await supabase
+    .from("draft_picks")
+    .select("*")
+    .eq("draft_room_id", draftRoomId)
+    .order("pick_number", { ascending: false })
+    .limit(1)
+    .single();
+  if (pickError || !lastPick) throw new Error("No picks found to undo.");
+
+  // Delete the last pick
+  await supabase.from("draft_picks").delete().eq("id", (lastPick as { id: number }).id);
+
+  // Rewind the pick index and reset timer
+  const prevIndex = room.currentPickIndex - 1;
+  await updateDraftRoom(draftRoomId, {
+    currentPickIndex: prevIndex,
+    pickStartedAt: new Date().toISOString(),
+  });
+}

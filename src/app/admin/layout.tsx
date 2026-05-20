@@ -13,6 +13,7 @@ const ADMIN_NAV = [
   { href: "/admin/standings", label: "Standings" },
   { href: "/admin/draft", label: "Draft" },
   { href: "/admin/announcements", label: "Announcements" },
+  { href: "/admin/import", label: "Import" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

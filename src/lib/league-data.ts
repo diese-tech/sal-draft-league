@@ -344,6 +344,29 @@ export async function savePlayer(player: LeaguePlayer) {
   await writeAuditLog("save_player", "player", player.id, { ign: player.ign, orgId: player.orgId, status: player.status });
 }
 
+export async function saveAnnouncement(a: Announcement) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase.from("announcements").upsert({
+    id: a.id,
+    title: a.title,
+    body: a.body,
+    created_at: a.createdAt,
+    category: a.category,
+    pinned: a.pinned,
+  });
+  if (error) throw error;
+  await writeAuditLog("save_announcement", "announcement", a.id, { title: a.title, category: a.category, pinned: a.pinned });
+}
+
+export async function deleteAnnouncement(id: string) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase.from("announcements").delete().eq("id", id);
+  if (error) throw error;
+  await writeAuditLog("delete_announcement", "announcement", id, null);
+}
+
 export async function recalculateAndPersistStandings() {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase env is missing.");

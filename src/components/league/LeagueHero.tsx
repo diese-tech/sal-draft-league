@@ -24,9 +24,6 @@ export function LeagueHero({ season, liveMatchName }: { season: Season; liveMatc
       </div>
 
       <section className="relative min-h-[88vh]">
-        {/* Tactical grid */}
-        <div className="sal-grid pointer-events-none absolute inset-0" />
-
         {/* Radial atmosphere */}
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute right-0 top-0 h-[40rem] w-[40rem] translate-x-1/4 rounded-full bg-cyan-500/[0.16] blur-3xl" />

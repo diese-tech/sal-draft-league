@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Announcement, AnnouncementCategory } from "@/types/league";
+import { MarkdownBody } from "@/components/ui/MarkdownBody";
 import { cn } from "@/lib/utils";
 
 const CATEGORIES: AnnouncementCategory[] = ["general", "rules", "draft", "results", "admin"];
@@ -23,6 +24,7 @@ export function AdminAnnouncementsClient({ announcements }: { announcements: Ann
   const [form, setForm] = useState<Announcement>(emptyAnnouncement());
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -110,16 +112,45 @@ export function AdminAnnouncementsClient({ announcements }: { announcements: Ann
             </div>
 
             <div>
-              <label className="mb-1 block text-[0.65rem] font-black uppercase text-slate-500">Body</label>
-              <textarea
-                maxLength={2000}
-                rows={6}
-                value={form.body}
-                onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-                className="w-full resize-y rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder-slate-600 outline-none focus:border-cyan-300/40 focus:ring-1 focus:ring-cyan-300/20"
-                placeholder="Announcement body…"
-              />
-              <p className="mt-0.5 text-right text-[0.6rem] text-slate-600">{form.body.length}/2000</p>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-[0.65rem] font-black uppercase text-slate-500">Body</label>
+                <div className="flex rounded-lg border border-white/10 overflow-hidden text-[0.65rem] font-black uppercase">
+                  <button
+                    type="button"
+                    onClick={() => setPreview(false)}
+                    className={cn("px-2.5 py-1 transition", !preview ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300")}
+                  >
+                    Write
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreview(true)}
+                    className={cn("px-2.5 py-1 transition", preview ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300")}
+                  >
+                    Preview
+                  </button>
+                </div>
+              </div>
+              {preview ? (
+                <div className="min-h-[160px] rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+                  {form.body ? (
+                    <MarkdownBody body={form.body} />
+                  ) : (
+                    <p className="text-xs text-slate-600">Nothing to preview yet.</p>
+                  )}
+                </div>
+              ) : (
+                <textarea
+                  maxLength={10000}
+                  rows={8}
+                  value={form.body}
+                  onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+                  className="w-full resize-y rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-sm text-white placeholder-slate-600 outline-none focus:border-cyan-300/40 focus:ring-1 focus:ring-cyan-300/20"
+                  placeholder={"## Title\n\nAnnouncement body. **Bold**, *italic*, `code`, lists, etc."}
+                  spellCheck={false}
+                />
+              )}
+              <p className="mt-0.5 text-right text-[0.6rem] text-slate-600">{form.body.length}/10000</p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

@@ -1,5 +1,10 @@
+import Link from "next/link";
 import type { Announcement } from "@/types/league";
 import { cn } from "@/lib/utils";
+
+function stripMd(s: string) {
+  return s.replace(/[#*_`>[\]!]/g, "").replace(/\n+/g, " ").trim();
+}
 
 const categoryLabel: Record<Announcement["category"], string> = {
   general: "General",
@@ -49,7 +54,13 @@ export function AnnouncementCard({ announcement }: { announcement: Announcement 
       </div>
 
       <h3 className="mb-1.5 font-black text-white">{announcement.title}</h3>
-      <p className="text-xs font-semibold leading-relaxed text-slate-400">{announcement.body}</p>
+      <p className="line-clamp-3 text-xs font-semibold leading-relaxed text-slate-400">{stripMd(announcement.body)}</p>
+      <Link
+        href={`/announcements/${announcement.id}`}
+        className="mt-3 inline-block text-[0.65rem] font-black uppercase text-cyan-400/80 transition hover:text-cyan-300"
+      >
+        Read article →
+      </Link>
     </div>
   );
 }

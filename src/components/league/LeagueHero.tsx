@@ -24,6 +24,9 @@ export function LeagueHero({ season, liveMatchName }: { season: Season; liveMatc
       </div>
 
       <section className="relative min-h-[88vh]">
+        {/* Bottom fade — video dissolves into body background at hero end */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-b from-transparent to-[#050912]" />
+
         {/* Radial atmosphere */}
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute right-0 top-0 h-[40rem] w-[40rem] translate-x-1/4 rounded-full bg-cyan-500/[0.16] blur-3xl" />

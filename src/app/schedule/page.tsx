@@ -1,7 +1,7 @@
 import { SchedulePageClient } from "@/components/league/SchedulePageClient";
 import { getLeagueData } from "@/lib/league-data";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 export default async function SchedulePage() {
   const data = await getLeagueData();

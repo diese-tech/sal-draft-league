@@ -1,7 +1,7 @@
 import { getLeagueData } from "@/lib/league-data";
 import { PlayersPageClient } from "@/components/league/PlayersPageClient";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 export const metadata = { title: "Players — SAL" };
 
 export default async function PlayersPage() {

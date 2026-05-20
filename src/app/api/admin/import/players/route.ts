@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { isAdminRequest } from "@/lib/admin-auth";
 import { savePlayer } from "@/lib/league-data";
@@ -52,5 +53,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (imported > 0) revalidateTag("league-data", {});
   return NextResponse.json({ imported, errors });
 }

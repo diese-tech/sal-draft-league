@@ -4,7 +4,7 @@ import { getLeagueData } from "@/lib/league-data";
 import { MarkdownBody } from "@/components/ui/MarkdownBody";
 import type { Announcement } from "@/types/league";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 const categoryLabel: Record<Announcement["category"], string> = {
   general: "General",

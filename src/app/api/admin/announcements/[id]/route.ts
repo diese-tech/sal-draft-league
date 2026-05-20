@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { isAdminRequest } from "@/lib/admin-auth";
 import { deleteAnnouncement } from "@/lib/league-data";
 
@@ -7,6 +8,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const { id } = await params;
   try {
     await deleteAnnouncement(id);
+    revalidateTag("league-data", {});
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("DELETE /api/admin/announcements/[id] error:", err);

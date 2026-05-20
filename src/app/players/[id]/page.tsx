@@ -5,7 +5,7 @@ import { AvatarMark, RolePill } from "@/components/card-lab/ui";
 import { getLeagueData } from "@/lib/league-data";
 import { cn } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 const divisionBadge: Record<DivisionId, string> = {
   solar: "border-orange-300/40 bg-orange-400/15 text-orange-100",

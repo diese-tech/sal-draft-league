@@ -5,7 +5,7 @@ export const metadata = {
   title: "Standings - Serpent Ascension League",
 };
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 export default async function StandingsPage() {
   const { divisions, standings, orgs, season } = await getLeagueData();

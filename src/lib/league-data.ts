@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { MOCK_LEAGUE_DATA } from "@/data/mock-league";
 import type { Announcement, Division, LeagueData, LeaguePlayer, Match, Org, OrgStanding, Season } from "@/types/league";
 import type { FormField, Registration } from "@/types/auth";
@@ -202,7 +203,7 @@ function fromDbAnnouncement(row: DbAnnouncement): Announcement {
   };
 }
 
-export async function getLeagueData(): Promise<LeagueData> {
+async function fetchLeagueData(): Promise<LeagueData> {
   const supabase = getSupabaseServerClient();
   if (!supabase) return MOCK_LEAGUE_DATA;
 
@@ -251,6 +252,13 @@ export async function getLeagueData(): Promise<LeagueData> {
     return MOCK_LEAGUE_DATA;
   }
 }
+
+// Cached version: shared across all concurrent requests, refreshed at most every 30s.
+// Admin mutations call revalidateTag('league-data') to invalidate immediately.
+export const getLeagueData = unstable_cache(fetchLeagueData, ["league-data"], {
+  tags: ["league-data"],
+  revalidate: 30,
+});
 
 export async function seedLeagueData(data: LeagueData = MOCK_LEAGUE_DATA) {
   const supabase = getSupabaseServerClient();
@@ -380,8 +388,8 @@ export async function recalculateAndPersistStandings() {
   if (orgRes.error) throw orgRes.error;
   if (matchRes.error) throw matchRes.error;
 
-  // Reuse the full data fetch for the recalc (standings recalc needs season/divisions too)
-  const data = await getLeagueData();
+  // Use uncached fetchLeagueData so recalc always sees the latest data, not a 30s-old snapshot.
+  const data = await fetchLeagueData();
   if (data === MOCK_LEAGUE_DATA) throw new Error("Cannot recalculate standings: Supabase data unavailable.");
 
   const standings = recalcStandings(data);

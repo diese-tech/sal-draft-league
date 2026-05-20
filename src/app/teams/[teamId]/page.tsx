@@ -7,7 +7,7 @@ import { getLeagueData } from "@/lib/league-data";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 const divisionAccent: Record<DivisionId, { badge: string; bar: string; header: string; name: string }> = {
   solar: {

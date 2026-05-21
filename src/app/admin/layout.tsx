@@ -11,11 +11,13 @@ const ADMIN_NAV = [
   { href: "/admin/players", label: "Roster" },
   { href: "/admin/matches", label: "Schedule" },
   { href: "/admin/standings", label: "Standings" },
+  { href: "/admin/seasons", label: "Seasons" },
   { href: "/admin/draft", label: "Draft" },
   { href: "/admin/announcements", label: "Announcements" },
   { href: "/admin/import", label: "Import" },
   { href: "/admin/registrations", label: "Registrations" },
   { href: "/admin/form-fields", label: "Form Fields" },
+  { href: "/admin/audit", label: "⚠ Audit" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

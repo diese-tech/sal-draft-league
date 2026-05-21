@@ -8,11 +8,36 @@ import { cn } from "@/lib/utils";
 
 const roles: PlayerRole[] = ["Solo", "Jungle", "Mid", "Carry", "Support", "Flex"];
 
-export function AdminPlayersClient({ data }: { data: LeagueData }) {
+function emptyPlayer(): LeaguePlayer {
+  return {
+    id: crypto.randomUUID(),
+    ign: "",
+    discordUsername: "",
+    primaryRole: "Flex",
+    secondaryRoles: [],
+    status: "free-agent",
+    isStarter: false,
+    isCaptain: false,
+    avatarInitials: "",
+    avatarGradient: "",
+  };
+}
+
+export function AdminPlayersClient({
+  data,
+  isSuperAdmin = false,
+}: {
+  data: LeagueData;
+  isSuperAdmin?: boolean;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState<LeaguePlayer | null>(null);
+  const [isNew, setIsNew] = useState(false);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [confirmScheduleId, setConfirmScheduleId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -21,18 +46,28 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
 
   const getOrg = (id?: string) => data.orgs.find((org) => org.id === id);
 
+  const activePlayers = data.players.filter((p) => !p.archivedAt);
+  const archivedPlayers = data.players.filter((p) => !!p.archivedAt);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return data.players.filter((p) => {
+    return activePlayers.filter((p) => {
       if (divFilter !== "all" && p.divisionId !== divFilter) return false;
       if (orgFilter !== "all" && (orgFilter === "__free_agent__" ? !!p.orgId : p.orgId !== orgFilter)) return false;
       if (q && !p.ign.toLowerCase().includes(q) && !p.discordUsername.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [data.players, search, divFilter, orgFilter]);
+  }, [activePlayers, search, divFilter, orgFilter]);
 
   function openEdit(player: LeaguePlayer) {
-    setEditing(player);
+    setEditing({ ...player });
+    setIsNew(false);
+    setMessage("");
+  }
+
+  function openNew() {
+    setEditing(emptyPlayer());
+    setIsNew(true);
     setMessage("");
   }
 
@@ -41,7 +76,6 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
     setSaving(true);
     setMessage("");
     const org = getOrg(editing.orgId);
-    // Derive status: if player has an org, they're org-affiliated; otherwise keep the admin's choice
     const status: PlayerStatus = editing.orgId ? "org-affiliated" : editing.status;
     const payload: LeaguePlayer = {
       ...editing,
@@ -56,21 +90,145 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
     });
     setSaving(false);
     if (!res.ok) {
-      const data = await res.json().catch(() => null) as { error?: string } | null;
-      setMessage(data?.error ? `Save failed: ${data.error}` : "Save failed. Check Supabase env and admin session.");
+      const json = await res.json().catch(() => null) as { error?: string } | null;
+      setMessage(json?.error ? `Save failed: ${json.error}` : "Save failed. Check Supabase env and admin session.");
       return;
     }
     setEditing(null);
     router.refresh();
   }
 
+  async function doArchive(player: LeaguePlayer, unarchive = false) {
+    setActionLoadingId(player.id);
+    setMessage("");
+    const res = await fetch(`/api/admin/players/${player.id}/archive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unarchive }),
+    });
+    setActionLoadingId(null);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null) as { error?: string } | null;
+      setMessage(json?.error ?? "Archive action failed.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function doScheduleDelete(player: LeaguePlayer) {
+    setActionLoadingId(player.id);
+    setConfirmScheduleId(null);
+    setMessage("");
+    const res = await fetch(`/api/admin/players/${player.id}/schedule-delete`, { method: "POST" });
+    setActionLoadingId(null);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null) as { error?: string } | null;
+      setMessage(json?.error ?? "Schedule delete failed.");
+      return;
+    }
+    router.refresh();
+  }
+
   const freeAgentStatuses: PlayerStatus[] = ["free-agent", "drafted", "queued-ghost", "active"];
+
+  function renderPlayerCard(player: LeaguePlayer, archived = false) {
+    const isScheduled = !!player.deletionScheduledAt;
+    return (
+      <div
+        key={player.id}
+        className={cn(
+          "rounded-2xl border bg-slate-950/70 p-4",
+          isScheduled ? "border-red-400/25 bg-red-950/10" : archived ? "border-white/5" : "border-white/8",
+        )}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <button onClick={() => openEdit(player)} className="min-w-0 flex-1 text-left hover:opacity-80">
+            <div className="flex items-center gap-2">
+              <p className="truncate font-black text-white">{player.ign}</p>
+              {archived && (
+                <span className="rounded border border-slate-500/40 bg-slate-500/10 px-1.5 py-0.5 text-[0.55rem] font-black uppercase text-slate-400">Archived</span>
+              )}
+              {isScheduled && (
+                <span className="rounded border border-red-400/40 bg-red-400/10 px-1.5 py-0.5 text-[0.55rem] font-black uppercase text-red-400">Pending Delete</span>
+              )}
+            </div>
+            <p className="truncate text-xs font-semibold text-slate-500">@{player.discordUsername}</p>
+            <p className="mt-1.5 text-xs font-semibold text-slate-400">
+              {getOrg(player.orgId)?.name ?? "Free agent"} · {player.isCaptain ? "Captain" : player.isStarter ? "Starter" : "Sub"}
+            </p>
+          </button>
+          <span className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-[0.65rem] font-black uppercase text-cyan-100 shrink-0">
+            {player.primaryRole}
+          </span>
+        </div>
+
+        {/* Superadmin actions */}
+        {isSuperAdmin && (
+          <div className="mt-3 flex flex-wrap gap-1.5 border-t border-white/5 pt-3">
+            {!archived ? (
+              <button
+                onClick={() => void doArchive(player)}
+                disabled={actionLoadingId === player.id}
+                className="rounded-lg border border-amber-400/25 px-2.5 py-1 text-[0.65rem] font-black uppercase text-amber-400/70 transition hover:border-amber-400/50 hover:text-amber-300 disabled:opacity-50"
+              >
+                {actionLoadingId === player.id ? "…" : "Archive"}
+              </button>
+            ) : (
+              <button
+                onClick={() => void doArchive(player, true)}
+                disabled={actionLoadingId === player.id}
+                className="rounded-lg border border-emerald-400/25 px-2.5 py-1 text-[0.65rem] font-black uppercase text-emerald-400/70 transition hover:border-emerald-400/50 hover:text-emerald-300 disabled:opacity-50"
+              >
+                {actionLoadingId === player.id ? "…" : "Unarchive"}
+              </button>
+            )}
+            {!isScheduled ? (
+              confirmScheduleId === player.id ? (
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => void doScheduleDelete(player)}
+                    disabled={actionLoadingId === player.id}
+                    className="rounded-lg border border-red-400/40 bg-red-400/10 px-2.5 py-1 text-[0.65rem] font-black uppercase text-red-300 transition hover:bg-red-400/20 disabled:opacity-50"
+                  >
+                    Confirm Schedule Delete
+                  </button>
+                  <button
+                    onClick={() => setConfirmScheduleId(null)}
+                    className="rounded-lg border border-white/10 px-2.5 py-1 text-[0.65rem] font-black uppercase text-slate-500 transition hover:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmScheduleId(player.id)}
+                  className="rounded-lg border border-red-400/20 px-2.5 py-1 text-[0.65rem] font-black uppercase text-red-400/60 transition hover:border-red-400/40 hover:text-red-300"
+                >
+                  Schedule Delete
+                </button>
+              )
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-sm font-semibold text-slate-400">{data.players.length} registered players · {filtered.length} shown. Assign players to teams and update starter/captain roles.</p>
-        {message && <p className="mt-1 text-sm font-semibold text-orange-200">{message}</p>}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-400">
+            {activePlayers.length} active · {filtered.length} shown
+            {archivedPlayers.length > 0 && ` · ${archivedPlayers.length} archived`}
+          </p>
+          {message && <p className="mt-1 text-sm font-semibold text-orange-200">{message}</p>}
+        </div>
+        {isSuperAdmin && (
+          <button onClick={openNew} className="rounded-xl border border-cyan-300/35 bg-cyan-300/15 px-4 py-2 text-sm font-black uppercase text-cyan-100 transition hover:bg-cyan-300/20">
+            + New Player
+          </button>
+        )}
       </div>
 
       {/* Search + filters */}
@@ -83,18 +241,22 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
         />
         <span className="w-px self-stretch bg-white/10" />
         {(["all", "solar", "lunar", "gaia"] as const).map((d) => (
-          <FilterChip key={d} active={divFilter === d} onClick={() => setDivFilter(d)}>{d === "all" ? "All Divisions" : d.charAt(0).toUpperCase() + d.slice(1)}</FilterChip>
+          <FilterChip key={d} active={divFilter === d} onClick={() => setDivFilter(d)}>
+            {d === "all" ? "All Divisions" : d.charAt(0).toUpperCase() + d.slice(1)}
+          </FilterChip>
         ))}
         <span className="w-px self-stretch bg-white/10" />
         <FilterChip active={orgFilter === "all"} onClick={() => setOrgFilter("all")}>All Teams</FilterChip>
         <FilterChip active={orgFilter === "__free_agent__"} onClick={() => setOrgFilter("__free_agent__")}>Free Agents</FilterChip>
-        {data.orgs.map((org) => (
+        {data.orgs.filter((o) => !o.archivedAt).map((org) => (
           <FilterChip key={org.id} active={orgFilter === org.id} onClick={() => setOrgFilter(org.id)}>{org.tag}</FilterChip>
         ))}
       </div>
 
+      {/* Edit / New panel */}
       {editing && (
         <div className="rounded-2xl border border-emerald-300/20 bg-slate-950/84 p-4 shadow-xl shadow-emerald-950/20">
+          <p className="mb-3 text-xs font-black uppercase text-slate-400">{isNew ? "New Player" : `Editing: ${editing.ign || "…"}`}</p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="IGN">
               <input value={editing.ign} onChange={(e) => setEditing({ ...editing, ign: e.target.value })} className={inputClass} />
@@ -105,17 +267,17 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
             <Field label="Team">
               <select value={editing.orgId ?? ""} onChange={(e) => setEditing({ ...editing, orgId: e.target.value || undefined })} className={inputClass}>
                 <option value="">Free agent</option>
-                {data.orgs.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+                {data.orgs.filter((o) => !o.archivedAt).map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
               </select>
             </Field>
             <Field label="Division">
               <select value={editing.divisionId ?? "solar"} onChange={(e) => setEditing({ ...editing, divisionId: e.target.value as DivisionId })} className={inputClass}>
-                {data.divisions.map((division) => <option key={division.id} value={division.id}>{division.name}</option>)}
+                {data.divisions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </Field>
             <Field label="Primary role">
               <select value={editing.primaryRole} onChange={(e) => setEditing({ ...editing, primaryRole: e.target.value as PlayerRole })} className={inputClass}>
-                {roles.map((role) => <option key={role} value={role}>{role}</option>)}
+                {roles.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </Field>
             {editing.orgId ? (
@@ -125,7 +287,7 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
             ) : (
               <Field label="Status">
                 <select value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value as PlayerStatus })} className={inputClass}>
-                  {freeAgentStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                  {freeAgentStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>
             )}
@@ -139,33 +301,39 @@ export function AdminPlayersClient({ data }: { data: LeagueData }) {
             </label>
           </div>
           <div className="mt-4 flex gap-2">
-            <button onClick={save} disabled={saving} className="rounded-xl border border-emerald-300/35 bg-emerald-300/15 px-4 py-2 text-sm font-black uppercase text-emerald-100 disabled:opacity-60">
-              {saving ? "Saving..." : "Save Player"}
+            <button onClick={() => void save()} disabled={saving} className="rounded-xl border border-emerald-300/35 bg-emerald-300/15 px-4 py-2 text-sm font-black uppercase text-emerald-100 disabled:opacity-60">
+              {saving ? "Saving..." : isNew ? "Create Player" : "Save Player"}
             </button>
             <button onClick={() => setEditing(null)} className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-black uppercase text-slate-300">Cancel</button>
           </div>
         </div>
       )}
 
+      {/* Active players grid */}
       <div className="grid gap-3 lg:grid-cols-2">
         {filtered.length === 0 && (
           <p className="col-span-2 py-6 text-center text-sm font-semibold text-slate-500">No players match the current filters.</p>
         )}
-        {filtered.map((player) => (
-          <button key={player.id} onClick={() => openEdit(player)} className="rounded-2xl border border-white/8 bg-slate-950/70 p-4 text-left transition hover:border-cyan-300/25 hover:bg-white/[0.04]">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate font-black text-white">{player.ign}</p>
-                <p className="truncate text-xs font-semibold text-slate-500">@{player.discordUsername}</p>
-              </div>
-              <span className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-2 py-1 text-[0.65rem] font-black uppercase text-cyan-100">{player.primaryRole}</span>
-            </div>
-            <p className="mt-3 text-xs font-semibold text-slate-400">
-              {getOrg(player.orgId)?.name ?? "Free agent"} · {player.isCaptain ? "Captain" : player.isStarter ? "Starter" : "Sub"}
-            </p>
-          </button>
-        ))}
+        {filtered.map((p) => renderPlayerCard(p))}
       </div>
+
+      {/* Archived players (collapsible) */}
+      {archivedPlayers.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowArchived((v) => !v)}
+            className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-slate-500 transition hover:text-slate-300"
+          >
+            <span>{showArchived ? "▾" : "▸"}</span>
+            Archived Players ({archivedPlayers.length})
+          </button>
+          {showArchived && (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {archivedPlayers.map((p) => renderPlayerCard(p, true))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

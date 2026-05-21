@@ -7,7 +7,7 @@ import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 type DbDivision = Omit<Division, "accentColor"> & { accent_color: string };
 
-type DbOrg = Omit<Org, "divisionId" | "logoInitials" | "logoGradient" | "primaryColor" | "accentGradient" | "captainId" | "socialLinks"> & {
+type DbOrg = Omit<Org, "divisionId" | "logoInitials" | "logoGradient" | "primaryColor" | "accentGradient" | "captainId" | "socialLinks" | "archivedAt" | "deletionScheduledAt"> & {
   division_id: Org["divisionId"];
   logo_initials: string;
   logo_gradient: string;
@@ -15,9 +15,11 @@ type DbOrg = Omit<Org, "divisionId" | "logoInitials" | "logoGradient" | "primary
   accent_gradient: string;
   captain_id?: string | null;
   social_links?: Org["socialLinks"] | null;
+  archived_at?: string | null;
+  deletion_scheduled_at?: string | null;
 };
 
-type DbPlayer = Omit<LeaguePlayer, "orgId" | "discordUsername" | "avatarInitials" | "avatarGradient" | "primaryRole" | "secondaryRoles" | "isStarter" | "isCaptain" | "divisionId"> & {
+type DbPlayer = Omit<LeaguePlayer, "orgId" | "discordUsername" | "avatarInitials" | "avatarGradient" | "primaryRole" | "secondaryRoles" | "isStarter" | "isCaptain" | "divisionId" | "archivedAt" | "deletionScheduledAt"> & {
   org_id?: string | null;
   discord_username: string;
   avatar_initials: string;
@@ -27,9 +29,11 @@ type DbPlayer = Omit<LeaguePlayer, "orgId" | "discordUsername" | "avatarInitials
   is_starter: boolean;
   is_captain: boolean;
   division_id?: LeaguePlayer["divisionId"] | null;
+  archived_at?: string | null;
+  deletion_scheduled_at?: string | null;
 };
 
-type DbMatch = Omit<Match, "divisionId" | "homeOrgId" | "awayOrgId" | "scheduledDate" | "scheduledTime" | "homeScore" | "awayScore" | "streamUrl" | "vodUrl"> & {
+type DbMatch = Omit<Match, "divisionId" | "homeOrgId" | "awayOrgId" | "scheduledDate" | "scheduledTime" | "homeScore" | "awayScore" | "streamUrl" | "vodUrl" | "archivedAt" | "deletionScheduledAt"> & {
   division_id: Match["divisionId"];
   home_org_id: string;
   away_org_id: string;
@@ -39,6 +43,8 @@ type DbMatch = Omit<Match, "divisionId" | "homeOrgId" | "awayOrgId" | "scheduled
   away_score?: number | null;
   stream_url?: string | null;
   vod_url?: string | null;
+  archived_at?: string | null;
+  deletion_scheduled_at?: string | null;
 };
 
 type DbStanding = Omit<OrgStanding, "orgId" | "divisionId" | "matchesPlayed" | "pointsFor" | "pointsAgainst" | "gamesBack"> & {
@@ -65,6 +71,8 @@ function fromDbOrg(row: DbOrg): Org {
     captainId: row.captain_id ?? undefined,
     founded: row.founded,
     socialLinks: row.social_links ?? undefined,
+    archivedAt: row.archived_at ?? undefined,
+    deletionScheduledAt: row.deletion_scheduled_at ?? undefined,
   };
 }
 
@@ -109,6 +117,8 @@ function fromDbPlayer(row: DbPlayer): LeaguePlayer {
     divisionId: row.division_id ?? undefined,
     status: row.status,
     stats: row.stats,
+    archivedAt: row.archived_at ?? undefined,
+    deletionScheduledAt: row.deletion_scheduled_at ?? undefined,
   };
 }
 
@@ -144,6 +154,8 @@ function fromDbMatch(row: DbMatch): Match {
     awayScore: row.away_score ?? undefined,
     streamUrl: row.stream_url ?? undefined,
     vodUrl: row.vod_url ?? undefined,
+    archivedAt: row.archived_at ?? undefined,
+    deletionScheduledAt: row.deletion_scheduled_at ?? undefined,
   };
 }
 
@@ -211,9 +223,9 @@ async function fetchLeagueData(): Promise<LeagueData> {
     const [seasonRes, divisionRes, orgRes, playerRes, matchRes, standingRes, announcementRes] = await Promise.all([
       supabase.from("seasons").select("*").order("start_date", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("divisions").select("*").order("tier"),
-      supabase.from("orgs").select("*").order("name"),
-      supabase.from("players").select("*").order("ign"),
-      supabase.from("matches").select("*").order("scheduled_date").order("scheduled_time"),
+      supabase.from("orgs").select("*").is("archived_at", null).order("name"),
+      supabase.from("players").select("*").is("archived_at", null).order("ign"),
+      supabase.from("matches").select("*").is("archived_at", null).order("scheduled_date").order("scheduled_time"),
       supabase.from("standings").select("*"),
       supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
     ]);
@@ -259,6 +271,213 @@ export const getLeagueData = unstable_cache(fetchLeagueData, ["league-data"], {
   tags: ["league-data"],
   revalidate: 30,
 });
+
+// Admin version: bypasses cache and includes archived records so the admin panel
+// can show / manage them. Never used by public-facing pages.
+export async function getAdminLeagueData(): Promise<LeagueData> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return MOCK_LEAGUE_DATA;
+
+  try {
+    const [seasonRes, divisionRes, orgRes, playerRes, matchRes, standingRes, announcementRes] = await Promise.all([
+      supabase.from("seasons").select("*").order("start_date", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("divisions").select("*").order("tier"),
+      supabase.from("orgs").select("*").order("name"),
+      supabase.from("players").select("*").order("ign"),
+      supabase.from("matches").select("*").order("scheduled_date").order("scheduled_time"),
+      supabase.from("standings").select("*"),
+      supabase.from("announcements").select("*").order("pinned", { ascending: false }).order("created_at", { ascending: false }),
+    ]);
+
+    const queryError = seasonRes.error ?? divisionRes.error ?? orgRes.error ?? playerRes.error ?? matchRes.error ?? standingRes.error ?? announcementRes.error;
+    if (queryError) {
+      console.error("getAdminLeagueData: Supabase error, using mock data:", queryError.message);
+      return MOCK_LEAGUE_DATA;
+    }
+
+    const seasonRow = seasonRes.data as (Season & { start_date?: string; end_date?: string; current_week?: number }) | null;
+    if (!seasonRow || !divisionRes.data?.length) {
+      console.error("getAdminLeagueData: Missing critical Supabase data, using mock data.");
+      return MOCK_LEAGUE_DATA;
+    }
+
+    return {
+      season: {
+        id: seasonRow.id,
+        name: seasonRow.name,
+        status: seasonRow.status,
+        startDate: seasonRow.start_date ?? seasonRow.startDate,
+        endDate: seasonRow.end_date ?? seasonRow.endDate,
+        currentWeek: seasonRow.current_week ?? seasonRow.currentWeek,
+      },
+      divisions: (divisionRes.data as DbDivision[]).map(fromDbDivision),
+      orgs: (orgRes.data as DbOrg[]).map(fromDbOrg),
+      players: (playerRes.data as DbPlayer[]).map(fromDbPlayer),
+      matches: (matchRes.data as DbMatch[]).map(fromDbMatch),
+      standings: (standingRes.data as DbStanding[]).map(fromDbStanding),
+      announcements: (announcementRes.data as DbAnnouncement[]).map(fromDbAnnouncement),
+      lastUpdated: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.error("getAdminLeagueData: unexpected error, using mock data:", err);
+    return MOCK_LEAGUE_DATA;
+  }
+}
+
+// ─── Seasons ─────────────────────────────────────────────────────────────────
+
+export async function getAllSeasons(): Promise<Season[]> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase.from("seasons").select("*").order("start_date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    name: row.name as string,
+    status: row.status as Season["status"],
+    startDate: (row.start_date ?? row.startDate) as string,
+    endDate: (row.end_date ?? row.endDate) as string,
+    currentWeek: (row.current_week ?? row.currentWeek) as number,
+  }));
+}
+
+export async function saveSeason(season: Season): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase.from("seasons").upsert({
+    id: season.id,
+    name: season.name,
+    status: season.status,
+    start_date: season.startDate,
+    end_date: season.endDate,
+    current_week: season.currentWeek,
+  });
+  if (error) throw error;
+  await writeAuditLog("save_season", "season", season.id, { name: season.name, status: season.status, currentWeek: season.currentWeek });
+}
+
+export async function advanceWeek(seasonId: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  // Fetch current week then increment in JS — avoids needing a DB function
+  const { data, error: fetchErr } = await supabase.from("seasons").select("current_week").eq("id", seasonId).single();
+  if (fetchErr) throw fetchErr;
+  const nextWeek = ((data as { current_week: number }).current_week ?? 0) + 1;
+  const { error } = await supabase.from("seasons").update({ current_week: nextWeek }).eq("id", seasonId);
+  if (error) throw error;
+  await writeAuditLog("advance_week", "season", seasonId, { week: nextWeek });
+}
+
+// ─── Org write ────────────────────────────────────────────────────────────────
+
+export async function saveOrg(org: Org): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase.from("orgs").upsert(toDbOrg(org));
+  if (error) throw error;
+  await writeAuditLog("save_org", "org", org.id, { name: org.name, tag: org.tag, divisionId: org.divisionId });
+}
+
+// ─── Archive / soft-delete ────────────────────────────────────────────────────
+
+type SoftDeleteTable = "players" | "orgs" | "matches";
+
+export async function archiveRecord(table: SoftDeleteTable, id: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase.from(table).update({ archived_at: new Date().toISOString() }).eq("id", id);
+  if (error) throw error;
+  await writeAuditLog("archive", table.slice(0, -1), id, {});
+}
+
+export async function unarchiveRecord(table: SoftDeleteTable, id: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const { error } = await supabase.from(table).update({ archived_at: null }).eq("id", id);
+  if (error) throw error;
+  await writeAuditLog("unarchive", table.slice(0, -1), id, {});
+}
+
+export async function scheduleDelete(table: SoftDeleteTable, id: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  const now = new Date().toISOString();
+  // Also archive the record if it isn't already (ensures it's hidden from public)
+  const { error } = await supabase.from(table).update({ deletion_scheduled_at: now, archived_at: now }).eq("id", id);
+  if (error) throw error;
+  await writeAuditLog("schedule_delete", table.slice(0, -1), id, {});
+}
+
+export async function cancelScheduledDelete(table: SoftDeleteTable, id: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  // Clear the deletion schedule but leave archived_at intact
+  const { error } = await supabase.from(table).update({ deletion_scheduled_at: null }).eq("id", id);
+  if (error) throw error;
+  await writeAuditLog("cancel_schedule_delete", table.slice(0, -1), id, {});
+}
+
+export async function hardDelete(table: SoftDeleteTable, id: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase env is missing.");
+  // Guard: only hard-delete records that are explicitly scheduled for deletion
+  const { data, error: fetchErr } = await supabase.from(table).select("deletion_scheduled_at").eq("id", id).single();
+  if (fetchErr) throw fetchErr;
+  if (!(data as { deletion_scheduled_at: string | null }).deletion_scheduled_at) {
+    throw new Error("Record is not scheduled for deletion. Schedule it first via the admin audit page.");
+  }
+  const { error } = await supabase.from(table).delete().eq("id", id);
+  if (error) throw error;
+  await writeAuditLog("hard_delete", table.slice(0, -1), id, {});
+}
+
+export interface PendingDelete {
+  entityType: SoftDeleteTable;
+  id: string;
+  label: string;
+  scheduledAt: string;
+}
+
+export async function getPendingDeletes(): Promise<PendingDelete[]> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return [];
+
+  const [playerRes, orgRes, matchRes] = await Promise.all([
+    supabase.from("players").select("id, ign, deletion_scheduled_at").not("deletion_scheduled_at", "is", null),
+    supabase.from("orgs").select("id, name, deletion_scheduled_at").not("deletion_scheduled_at", "is", null),
+    supabase.from("matches").select("id, home_org_id, away_org_id, scheduled_date, deletion_scheduled_at").not("deletion_scheduled_at", "is", null),
+  ]);
+
+  const results: PendingDelete[] = [];
+
+  for (const row of (playerRes.data ?? [])) {
+    results.push({
+      entityType: "players",
+      id: (row as { id: string }).id,
+      label: (row as { ign: string }).ign,
+      scheduledAt: (row as { deletion_scheduled_at: string }).deletion_scheduled_at,
+    });
+  }
+  for (const row of (orgRes.data ?? [])) {
+    results.push({
+      entityType: "orgs",
+      id: (row as { id: string }).id,
+      label: (row as { name: string }).name,
+      scheduledAt: (row as { deletion_scheduled_at: string }).deletion_scheduled_at,
+    });
+  }
+  for (const row of (matchRes.data ?? [])) {
+    const r = row as { id: string; home_org_id: string; away_org_id: string; scheduled_date: string; deletion_scheduled_at: string };
+    results.push({
+      entityType: "matches",
+      id: r.id,
+      label: `${r.home_org_id} vs ${r.away_org_id} (${r.scheduled_date})`,
+      scheduledAt: r.deletion_scheduled_at,
+    });
+  }
+
+  return results.sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
+}
 
 export async function seedLeagueData(data: LeagueData = MOCK_LEAGUE_DATA) {
   const supabase = getSupabaseServerClient();

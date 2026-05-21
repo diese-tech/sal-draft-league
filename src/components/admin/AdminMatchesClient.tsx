@@ -22,28 +22,40 @@ function emptyMatch(data: LeagueData): Match {
   };
 }
 
-export function AdminMatchesClient({ data }: { data: LeagueData }) {
+export function AdminMatchesClient({
+  data,
+  isSuperAdmin = false,
+}: {
+  data: LeagueData;
+  isSuperAdmin?: boolean;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState<Match | null>(null);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [confirmScheduleId, setConfirmScheduleId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Filters
   const [divFilter, setDivFilter] = useState<DivisionId | "all">("all");
   const [statusFilter, setStatusFilter] = useState<MatchStatus | "all">("all");
   const [weekFilter, setWeekFilter] = useState<number | "all">("all");
 
-  const weeks = useMemo(() => [...new Set(data.matches.map((m) => m.week))].sort((a, b) => a - b), [data.matches]);
+  const activeMatches = data.matches.filter((m) => !m.archivedAt);
+  const archivedMatches = data.matches.filter((m) => !!m.archivedAt);
+
+  const weeks = useMemo(() => [...new Set(activeMatches.map((m) => m.week))].sort((a, b) => a - b), [activeMatches]);
 
   const sorted = useMemo(
     () =>
-      [...data.matches]
+      [...activeMatches]
         .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate) || a.scheduledTime.localeCompare(b.scheduledTime))
         .filter((m) => divFilter === "all" || m.divisionId === divFilter)
         .filter((m) => statusFilter === "all" || m.status === statusFilter)
         .filter((m) => weekFilter === "all" || m.week === weekFilter),
-    [data.matches, divFilter, statusFilter, weekFilter],
+    [activeMatches, divFilter, statusFilter, weekFilter],
   );
 
   const orgOptions = data.orgs.filter((org) => !editing || org.divisionId === editing.divisionId);
@@ -56,6 +68,37 @@ export function AdminMatchesClient({ data }: { data: LeagueData }) {
     } else {
       void doSave();
     }
+  }
+
+  async function doArchive(match: Match, unarchive = false) {
+    setActionLoadingId(match.id);
+    setMessage("");
+    const res = await fetch(`/api/admin/matches/${match.id}/archive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unarchive }),
+    });
+    setActionLoadingId(null);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null) as { error?: string } | null;
+      setMessage(json?.error ?? "Archive action failed.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function doScheduleDelete(match: Match) {
+    setActionLoadingId(match.id);
+    setConfirmScheduleId(null);
+    setMessage("");
+    const res = await fetch(`/api/admin/matches/${match.id}/schedule-delete`, { method: "POST" });
+    setActionLoadingId(null);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null) as { error?: string } | null;
+      setMessage(json?.error ?? "Schedule delete failed.");
+      return;
+    }
+    router.refresh();
   }
 
   async function doSave() {
@@ -87,12 +130,17 @@ export function AdminMatchesClient({ data }: { data: LeagueData }) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-400">{data.matches.length} total matches. Completed scores recalculate standings.</p>
+          <p className="text-sm font-semibold text-slate-400">
+            {activeMatches.length} active matches
+            {archivedMatches.length > 0 && ` · ${archivedMatches.length} archived`}. Completed scores recalculate standings.
+          </p>
           {message && <p className="mt-1 text-sm font-semibold text-orange-200">{message}</p>}
         </div>
-        <button onClick={() => { setEditing(emptyMatch(data)); setMessage(""); }} className="rounded-xl border border-cyan-300/35 bg-cyan-300/15 px-4 py-2 text-sm font-black uppercase text-cyan-100 transition hover:bg-cyan-300/20">
-          + Schedule Match
-        </button>
+        {isSuperAdmin && (
+          <button onClick={() => { setEditing(emptyMatch(data)); setMessage(""); }} className="rounded-xl border border-cyan-300/35 bg-cyan-300/15 px-4 py-2 text-sm font-black uppercase text-cyan-100 transition hover:bg-cyan-300/20">
+            + Schedule Match
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -189,14 +237,97 @@ export function AdminMatchesClient({ data }: { data: LeagueData }) {
           <p className="px-4 py-6 text-center text-sm font-semibold text-slate-500">No matches match the current filters.</p>
         )}
         {sorted.map((match) => (
-          <button key={match.id} onClick={() => { setEditing(match); setMessage(""); setConfirming(false); }} className="grid w-full gap-3 border-b border-white/5 px-4 py-3 text-left transition hover:bg-white/[0.04] last:border-0 sm:grid-cols-[7rem_1fr_7rem_5rem] sm:items-center">
-            <span className={cn("w-fit rounded-full border px-2 py-0.5 text-[0.65rem] font-black uppercase", match.status === "live" ? "border-orange-300/40 bg-orange-300/15 text-orange-100" : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100")}>{match.status}</span>
-            <span className="min-w-0 font-black text-white">{getOrg(match.homeOrgId)?.name ?? match.homeOrgId} <span className="text-slate-500">vs</span> {getOrg(match.awayOrgId)?.name ?? match.awayOrgId}</span>
-            <span className="text-xs font-semibold text-slate-400">{match.scheduledDate} {match.scheduledTime}</span>
-            <span className="text-xs font-black uppercase text-slate-500">Wk {match.week}</span>
-          </button>
+          <div key={match.id} className={cn("border-b border-white/5 last:border-0", match.deletionScheduledAt ? "bg-red-950/10" : "")}>
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+              <button
+                onClick={() => { setEditing(match); setMessage(""); setConfirming(false); }}
+                className="grid flex-1 gap-3 text-left sm:grid-cols-[7rem_1fr_7rem_5rem] sm:items-center"
+              >
+                <span className={cn("w-fit rounded-full border px-2 py-0.5 text-[0.65rem] font-black uppercase", match.status === "live" ? "border-orange-300/40 bg-orange-300/15 text-orange-100" : "border-cyan-300/20 bg-cyan-300/10 text-cyan-100")}>{match.status}</span>
+                <span className="min-w-0 font-black text-white">
+                  {getOrg(match.homeOrgId)?.name ?? match.homeOrgId} <span className="text-slate-500">vs</span> {getOrg(match.awayOrgId)?.name ?? match.awayOrgId}
+                  {match.deletionScheduledAt && <span className="ml-2 rounded border border-red-400/40 bg-red-400/10 px-1.5 py-0.5 text-[0.55rem] font-black uppercase text-red-400">Pending Delete</span>}
+                </span>
+                <span className="text-xs font-semibold text-slate-400">{match.scheduledDate} {match.scheduledTime}</span>
+                <span className="text-xs font-black uppercase text-slate-500">Wk {match.week}</span>
+              </button>
+              {isSuperAdmin && (
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    onClick={() => void doArchive(match)}
+                    disabled={actionLoadingId === match.id}
+                    className="rounded-lg border border-amber-400/25 px-2.5 py-1 text-[0.65rem] font-black uppercase text-amber-400/70 transition hover:border-amber-400/50 hover:text-amber-300 disabled:opacity-50"
+                  >
+                    {actionLoadingId === match.id ? "…" : "Archive"}
+                  </button>
+                  {!match.deletionScheduledAt ? (
+                    confirmScheduleId === match.id ? (
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => void doScheduleDelete(match)}
+                          disabled={actionLoadingId === match.id}
+                          className="rounded-lg border border-red-400/40 bg-red-400/10 px-2.5 py-1 text-[0.65rem] font-black uppercase text-red-300 transition hover:bg-red-400/20 disabled:opacity-50"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          onClick={() => setConfirmScheduleId(null)}
+                          className="rounded-lg border border-white/10 px-2.5 py-1 text-[0.65rem] font-black uppercase text-slate-500 transition hover:text-slate-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmScheduleId(match.id)}
+                        className="rounded-lg border border-red-400/20 px-2.5 py-1 text-[0.65rem] font-black uppercase text-red-400/60 transition hover:border-red-400/40 hover:text-red-300"
+                      >
+                        Schedule Delete
+                      </button>
+                    )
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
         ))}
       </div>
+
+      {/* Archived matches (collapsible) */}
+      {archivedMatches.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowArchived((v) => !v)}
+            className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-slate-500 transition hover:text-slate-300"
+          >
+            <span>{showArchived ? "▾" : "▸"}</span>
+            Archived Matches ({archivedMatches.length})
+          </button>
+          {showArchived && (
+            <div className="overflow-hidden rounded-2xl border border-white/5 bg-slate-950/50">
+              {archivedMatches.map((match) => (
+                <div key={match.id} className={cn("flex flex-wrap items-center gap-2 border-b border-white/5 px-4 py-3 last:border-0", match.deletionScheduledAt ? "bg-red-950/10" : "")}>
+                  <div className="flex flex-1 flex-wrap items-center gap-3 text-sm">
+                    <span className="rounded border border-slate-500/30 bg-slate-500/10 px-1.5 py-0.5 text-[0.55rem] font-black uppercase text-slate-400">Archived</span>
+                    {match.deletionScheduledAt && <span className="rounded border border-red-400/40 bg-red-400/10 px-1.5 py-0.5 text-[0.55rem] font-black uppercase text-red-400">Pending Delete</span>}
+                    <span className="font-black text-white/70">{getOrg(match.homeOrgId)?.name ?? match.homeOrgId} vs {getOrg(match.awayOrgId)?.name ?? match.awayOrgId}</span>
+                    <span className="text-xs text-slate-500">{match.scheduledDate}</span>
+                  </div>
+                  {isSuperAdmin && (
+                    <button
+                      onClick={() => void doArchive(match, true)}
+                      disabled={actionLoadingId === match.id}
+                      className="rounded-lg border border-emerald-400/25 px-2.5 py-1 text-[0.65rem] font-black uppercase text-emerald-400/70 transition hover:border-emerald-400/50 hover:text-emerald-300 disabled:opacity-50"
+                    >
+                      {actionLoadingId === match.id ? "…" : "Unarchive"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

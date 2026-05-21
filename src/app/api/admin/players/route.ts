@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { z } from "zod";
-import { isAdminRequest } from "@/lib/admin-auth";
+import { isSuperAdminRequest } from "@/lib/admin-auth";
 import { savePlayer } from "@/lib/league-data";
 
 const playerSchema = z.object({
@@ -21,7 +21,7 @@ const playerSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  if (!isAdminRequest(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  if (!isSuperAdminRequest(request)) return NextResponse.json({ error: "Unauthorized. Superadmin required." }, { status: 403 });
 
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });

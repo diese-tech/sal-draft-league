@@ -38,6 +38,10 @@ export interface Org {
     twitch?: string;
     twitter?: string;
   };
+  /** ISO timestamp — set means archived, hidden from public. Admin-only visibility. */
+  archivedAt?: string;
+  /** ISO timestamp — set means queued for hard delete by a superadmin. */
+  deletionScheduledAt?: string;
 }
 
 export interface LeaguePlayer {
@@ -60,6 +64,10 @@ export interface LeaguePlayer {
     gamesPlayed: number;
     wins: number;
   };
+  /** ISO timestamp — set means archived, hidden from public. Admin-only visibility. */
+  archivedAt?: string;
+  /** ISO timestamp — set means queued for hard delete by a superadmin. */
+  deletionScheduledAt?: string;
 }
 
 export interface Match {
@@ -75,6 +83,10 @@ export interface Match {
   awayScore?: number;
   streamUrl?: string;
   vodUrl?: string;
+  /** ISO timestamp — set means archived, hidden from public. Admin-only visibility. */
+  archivedAt?: string;
+  /** ISO timestamp — set means queued for hard delete by a superadmin. */
+  deletionScheduledAt?: string;
 }
 
 export interface OrgStanding {

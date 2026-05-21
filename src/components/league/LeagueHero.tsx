@@ -46,46 +46,35 @@ export function LeagueHero({ season, liveMatchName }: { season: Season; liveMatc
 
           {/* Identity — left-anchored, max half-width */}
           <div className="flex max-w-xl flex-col">
-            {/* Main title */}
-            <h1 className="mb-2 text-5xl font-black leading-tight tracking-tight text-white sm:text-6xl lg:text-7xl">
+            {/* Main title — solid white + single solar accent; video is the color */}
+            <h1 className="mb-2 font-display text-5xl font-bold leading-[0.95] tracking-tight text-white sm:text-6xl lg:text-7xl">
               Serpent{" "}
-              <span className="bg-gradient-to-r from-cyan-200 via-fuchsia-300 to-amber-300 bg-clip-text text-transparent">
-                Ascension
-              </span>
+              <span className="italic text-orange-400">Ascension</span>
+              {" "}League
             </h1>
-            <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-300">
+            <p className="mb-10 font-mono text-xs uppercase tracking-[0.22em] text-slate-400">
               League · {season.name}
             </p>
-            <p className="mb-10 max-w-sm text-base font-semibold leading-relaxed text-slate-400">
-              Competitive Smite 2. Three divisions. One throne. Every play, every rivalry, every moment — on the record and in the spotlight.
-            </p>
 
-            {/* CTAs */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* CTAs — one primary action, three ghost links */}
+            <div className="flex flex-wrap items-center gap-4">
               <Link
-                href="/standings"
-                className="rounded-xl border border-cyan-300/40 bg-cyan-300/15 px-6 py-2.5 text-sm font-black uppercase text-cyan-100 shadow-lg shadow-cyan-950/30 transition hover:bg-cyan-300/20 active:translate-y-0.5 active:scale-95"
+                href={liveMatchName ? "/watch" : "/standings"}
+                className="sal-button sal-btn-ember inline-flex items-center gap-2 rounded-[var(--sal-button-radius)] px-6 py-2.5 text-sm font-bold"
               >
-                View Standings
+                {liveMatchName ? "▶ Watch Live" : "View Standings"}
               </Link>
-              <Link
-                href="/schedule"
-                className="rounded-xl border border-white/10 bg-white/[0.04] px-6 py-2.5 text-sm font-black uppercase text-slate-300 transition hover:bg-white/[0.08] active:translate-y-0.5 active:scale-95"
-              >
-                Schedule
-              </Link>
-              <Link
-                href="/teams"
-                className="rounded-xl border border-white/10 bg-white/[0.04] px-6 py-2.5 text-sm font-black uppercase text-slate-300 transition hover:bg-white/[0.08] active:translate-y-0.5 active:scale-95"
-              >
-                Teams
-              </Link>
-              <a
-                href="#discord"
-                className="rounded-xl border border-fuchsia-300/30 bg-fuchsia-300/10 px-6 py-2.5 text-sm font-black uppercase text-fuchsia-100 transition hover:bg-fuchsia-300/15 active:translate-y-0.5 active:scale-95"
-              >
-                Discord
-              </a>
+              <div className="flex items-center gap-5">
+                <Link href="/schedule" className="text-sm text-slate-400 transition-colors hover:text-white">
+                  Schedule
+                </Link>
+                <Link href="/teams" className="text-sm text-slate-400 transition-colors hover:text-white">
+                  Teams
+                </Link>
+                <a href="#discord" className="text-sm text-slate-400 transition-colors hover:text-white">
+                  Discord
+                </a>
+              </div>
             </div>
           </div>
         </div>

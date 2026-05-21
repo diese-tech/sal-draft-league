@@ -72,37 +72,72 @@ async function PulseSection() {
         />
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-cyan-300/15 bg-slate-950/78 shadow-2xl shadow-cyan-950/20 backdrop-blur">
-        <div className="h-1 bg-gradient-to-r from-cyan-400 via-emerald-400 to-blue-500" />
-        <div className="space-y-4 p-4">
-          <p className="text-[0.65rem] font-black uppercase tracking-widest text-emerald-200">Choose Division</p>
-          {divisions.map((division) => {
-            const leader = standings
-              .filter((standing) => standing.divisionId === division.id)
-              .sort((a, b) => b.wins - a.wins)[0];
-            const leaderOrg = leader ? getOrg(leader.orgId) : undefined;
-            return (
-              <Link
-                key={division.id}
-                href={`/standings?division=${division.id}`}
-                className={cn(
-                  "block rounded-xl border px-4 py-3 transition hover:bg-white/[0.05]",
-                  division.id === "solar" && "border-orange-300/20 bg-orange-400/8",
-                  division.id === "lunar" && "border-cyan-300/20 bg-cyan-400/8",
-                  division.id === "gaia" && "border-emerald-300/20 bg-emerald-400/8",
-                )}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-lg font-black italic text-white">{division.name.replace(" Division", "")}</span>
-                  <span className="text-[0.65rem] font-black uppercase text-slate-300">Tier {division.tier}</span>
+      {/* Division leaders panel — top-3 per division replacing navigation links */}
+      <div className="overflow-hidden rounded-[var(--sal-card-radius)] border border-white/10 bg-slate-950/80 shadow-2xl shadow-black/40 backdrop-blur">
+        <div className="h-0.5 bg-gradient-to-r from-orange-500 via-cyan-400 to-emerald-400" />
+        <div className="p-4">
+          <p className="mb-3 font-mono text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-slate-400">Division Leaders</p>
+          <div className="space-y-4">
+            {divisions.map((division) => {
+              const divStandings = standings
+                .filter((s) => s.divisionId === division.id)
+                .sort((a, b) => b.wins - a.wins || a.losses - b.losses)
+                .slice(0, 3);
+              const accentColor =
+                division.id === "solar"
+                  ? "text-orange-400"
+                  : division.id === "lunar"
+                    ? "text-cyan-400"
+                    : "text-emerald-400";
+              return (
+                <div key={division.id}>
+                  <Link
+                    href={`/standings?division=${division.id}`}
+                    className="group mb-1.5 flex items-center justify-between"
+                  >
+                    <span className={cn("font-mono text-[0.6rem] font-semibold uppercase tracking-[0.18em] transition-colors group-hover:text-white", accentColor)}>
+                      {division.name.replace(" Division", "")}
+                    </span>
+                    <span className="font-mono text-[0.55rem] text-slate-600 transition-colors group-hover:text-slate-400">→</span>
+                  </Link>
+                  <div className="space-y-0.5">
+                    {divStandings.map((s, rank) => {
+                      const org = getOrg(s.orgId);
+                      return (
+                        <div key={s.orgId} className="flex items-center gap-2 rounded px-1 py-1 transition hover:bg-white/[0.04]">
+                          <span className="w-4 font-mono text-[0.6rem] text-slate-600">#{rank + 1}</span>
+                          <span className="flex-1 truncate text-[0.75rem] font-semibold text-slate-200">{org.tag}</span>
+                          <span className="font-mono text-[0.65rem] font-semibold text-slate-400">
+                            {s.wins}–{s.losses}
+                          </span>
+                          {/* Win streak dots — leading W results, up to 5 */}
+                          {s.streak.length > 0 && s.streak[0] === "W" && (
+                            <span className="flex items-center gap-0.5">
+                              {s.streak.slice(0, 5).map((r, i) => (
+                                <span
+                                  key={i}
+                                  className={cn(
+                                    "h-1 w-1 rounded-full",
+                                    r === "W" ? accentColor.replace("text-", "bg-") : "bg-slate-700",
+                                  )}
+                                />
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {divStandings.length === 0 && (
+                      <p className="px-1 text-[0.7rem] text-slate-600">No standings yet</p>
+                    )}
+                  </div>
                 </div>
-                <p className="mt-1 text-xs font-semibold text-slate-400">{leaderOrg ? `Leader: ${leaderOrg.name}` : division.description}</p>
-              </Link>
-            );
-          })}
-          <div className="grid grid-cols-2 gap-3 border-t border-white/10 pt-4 text-xs font-black uppercase text-slate-300">
-            <span>{season.name}</span>
-            <span className="text-right text-emerald-200">Week {season.currentWeek}</span>
+              );
+            })}
+          </div>
+          <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3">
+            <span className="font-mono text-[0.6rem] text-slate-600">{season.name}</span>
+            <span className="font-mono text-[0.6rem] text-cyan-500">Wk {season.currentWeek}</span>
           </div>
         </div>
       </div>
@@ -220,15 +255,40 @@ function DiscordSection() {
 
 // --- Skeleton components ---
 
+// --- Shared skeleton primitive ---
+function SkeletonBlock({
+  className,
+  variant = "default",
+}: {
+  className?: string;
+  variant?: "default" | "solar" | "gaia";
+}) {
+  const shimmerClass =
+    variant === "solar"
+      ? "skeleton-shimmer-solar"
+      : variant === "gaia"
+        ? "skeleton-shimmer-gaia"
+        : "skeleton-shimmer";
+  return <div className={cn("rounded-[var(--sal-card-radius)]", shimmerClass, className)} />;
+}
+
+function SkeletonHeader({ eyebrow, variant = "default" }: { eyebrow: string; variant?: "default" | "solar" | "gaia" }) {
+  return (
+    <div className="mb-5 space-y-2">
+      <p className="font-mono text-xs font-semibold uppercase tracking-[0.22em] text-cyan-400/60">{eyebrow}</p>
+      <SkeletonBlock className="h-7 w-44" variant={variant} />
+    </div>
+  );
+}
+
 function PulseSectionSkeleton() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-      <div className="animate-pulse space-y-4">
-        <div className="h-4 w-32 rounded bg-white/[0.07]" />
-        <div className="h-6 w-48 rounded bg-white/[0.07]" />
+      <div className="space-y-4">
+        <SkeletonHeader eyebrow="Right Now" />
         <div className="grid gap-4 lg:grid-cols-[1.45fr_0.9fr]">
-          <div className="h-48 rounded-2xl bg-white/[0.04]" />
-          <div className="h-48 rounded-2xl bg-white/[0.04]" />
+          <SkeletonBlock className="h-48" />
+          <SkeletonBlock className="h-48" />
         </div>
       </div>
     </section>
@@ -238,20 +298,14 @@ function PulseSectionSkeleton() {
 function MatchesSectionSkeleton() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-      <div className="animate-pulse grid gap-10 lg:grid-cols-2">
-        <div className="space-y-4">
-          <div className="h-4 w-32 rounded bg-white/[0.07]" />
-          <div className="h-6 w-48 rounded bg-white/[0.07]" />
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-16 rounded-xl bg-white/[0.04]" />
-          ))}
+      <div className="grid gap-10 lg:grid-cols-2">
+        <div className="space-y-3">
+          <SkeletonHeader eyebrow="Schedule" />
+          {[...Array(3)].map((_, i) => <SkeletonBlock key={i} className="h-16" />)}
         </div>
-        <div className="space-y-4">
-          <div className="h-4 w-32 rounded bg-white/[0.07]" />
-          <div className="h-6 w-48 rounded bg-white/[0.07]" />
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-16 rounded-xl bg-white/[0.04]" />
-          ))}
+        <div className="space-y-3">
+          <SkeletonHeader eyebrow="Results" />
+          {[...Array(3)].map((_, i) => <SkeletonBlock key={i} className="h-16" />)}
         </div>
       </div>
     </section>
@@ -261,14 +315,11 @@ function MatchesSectionSkeleton() {
 function DivisionsSectionSkeleton() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-      <div className="animate-pulse space-y-4">
-        <div className="h-4 w-32 rounded bg-white/[0.07]" />
-        <div className="h-6 w-48 rounded bg-white/[0.07]" />
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-40 rounded-2xl bg-white/[0.04]" />
-          ))}
-        </div>
+      <SkeletonHeader eyebrow="League" />
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <SkeletonBlock className="h-40" variant="solar" />
+        <SkeletonBlock className="h-40" />
+        <SkeletonBlock className="h-40" variant="gaia" />
       </div>
     </section>
   );
@@ -277,11 +328,8 @@ function DivisionsSectionSkeleton() {
 function StandingsSectionSkeleton() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-      <div className="animate-pulse space-y-4">
-        <div className="h-4 w-32 rounded bg-white/[0.07]" />
-        <div className="h-6 w-48 rounded bg-white/[0.07]" />
-        <div className="h-64 rounded-2xl bg-white/[0.04]" />
-      </div>
+      <SkeletonHeader eyebrow="Standings" />
+      <SkeletonBlock className="h-64" />
     </section>
   );
 }
@@ -289,14 +337,9 @@ function StandingsSectionSkeleton() {
 function AnnouncementsSectionSkeleton() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-      <div className="animate-pulse space-y-4">
-        <div className="h-4 w-32 rounded bg-white/[0.07]" />
-        <div className="h-6 w-48 rounded bg-white/[0.07]" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-32 rounded-2xl bg-white/[0.04]" />
-          ))}
-        </div>
+      <SkeletonHeader eyebrow="News" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {[...Array(3)].map((_, i) => <SkeletonBlock key={i} className="h-32" />)}
       </div>
     </section>
   );
@@ -314,11 +357,11 @@ function SectionHeader({
   return (
     <div className="mb-5 flex items-end justify-between gap-4">
       <div>
-        <p className="mb-0.5 text-[0.65rem] font-black uppercase tracking-widest text-cyan-300">{eyebrow}</p>
-        <h2 className="text-xl font-black text-white">{title}</h2>
+        <p className="mb-1 font-mono text-xs font-semibold uppercase tracking-[0.22em] text-cyan-400">{eyebrow}</p>
+        <h2 className="font-display text-[26px] font-bold leading-tight tracking-tight text-white">{title}</h2>
       </div>
       {action && (
-        <Link href={action.href} className="shrink-0 text-xs font-black uppercase text-emerald-300 transition-colors hover:text-emerald-100">
+        <Link href={action.href} className="shrink-0 font-mono text-xs font-semibold uppercase tracking-wider text-emerald-400 transition-colors hover:text-emerald-200">
           {action.label}
         </Link>
       )}

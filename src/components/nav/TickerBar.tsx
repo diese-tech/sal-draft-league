@@ -7,6 +7,11 @@ const DIV_COLOR = {
   lunar: "text-cyan-300",
   gaia: "text-emerald-300",
 } as const;
+const DIV_SEP_COLOR = {
+  solar: "text-orange-500/50",
+  lunar: "text-cyan-500/50",
+  gaia: "text-emerald-500/50",
+} as const;
 
 function shortTime(date: string, time: string) {
   const d = new Date(`${date}T${time}:00`);
@@ -38,12 +43,13 @@ export async function TickerBar() {
     const home = getOrg(m.homeOrgId);
     const away = getOrg(m.awayOrgId);
     const divColor = DIV_COLOR[m.divisionId];
+    const sepColor = DIV_SEP_COLOR[m.divisionId];
     const tag = DIV_TAG[m.divisionId];
 
     return (
-      <span key={key} className="inline-flex shrink-0 items-center gap-2 px-5">
+      <span key={key} className="inline-flex shrink-0 items-center gap-2 px-4">
         {/* Division tag */}
-        <span className={cn("text-[0.6rem] font-black", divColor)}>[{tag}]</span>
+        <span className={cn("font-mono text-[0.72rem] font-semibold", divColor)}>[{tag}]</span>
 
         {/* Live dot */}
         {m.status === "live" && (
@@ -51,45 +57,45 @@ export async function TickerBar() {
         )}
 
         {/* Teams + score/vs */}
-        <span className="text-[0.65rem] font-black text-white">{home?.tag ?? "?"}</span>
+        <span className="text-[0.78rem] font-bold text-white">{home?.tag ?? "?"}</span>
         {m.status === "completed" ? (
-          <span className="font-mono text-[0.65rem] font-black text-slate-300">
+          <span className="font-mono text-[0.78rem] font-bold text-slate-300">
             {m.homeScore}:{m.awayScore}
           </span>
         ) : m.status === "live" ? (
-          <span className="font-mono text-[0.65rem] font-black text-orange-200">
+          <span className="font-mono text-[0.78rem] font-bold text-orange-200">
             {m.homeScore ?? "–"}:{m.awayScore ?? "–"}
           </span>
         ) : (
-          <span className="text-[0.6rem] text-slate-500">vs</span>
+          <span className="text-[0.72rem] text-slate-500">vs</span>
         )}
-        <span className="text-[0.65rem] font-black text-white">{away?.tag ?? "?"}</span>
+        <span className="text-[0.78rem] font-bold text-white">{away?.tag ?? "?"}</span>
 
         {/* Status label */}
         {m.status === "live" && (
-          <span className="text-[0.6rem] font-black uppercase text-orange-300">· LIVE</span>
+          <span className="font-mono text-[0.72rem] font-semibold uppercase text-orange-300">· LIVE</span>
         )}
         {m.status === "completed" && (
-          <span className="text-[0.6rem] text-slate-600">· Final</span>
+          <span className="text-[0.72rem] text-slate-500">· Final</span>
         )}
         {m.status === "scheduled" && (
-          <span className="text-[0.6rem] text-slate-600">· {shortTime(m.scheduledDate, m.scheduledTime)}</span>
+          <span className="text-[0.72rem] text-slate-500">· {shortTime(m.scheduledDate, m.scheduledTime)}</span>
         )}
 
-        {/* Separator */}
-        <span className="ml-3 text-slate-700">|</span>
+        {/* Division-colored separator */}
+        <span className={cn("ml-2 text-[0.78rem]", sepColor)}>|</span>
       </span>
     );
   };
 
   return (
     <div
-      className="fixed inset-x-0 top-0 z-[60] h-8 overflow-hidden border-b border-white/[0.06] bg-slate-950/95 backdrop-blur"
+      className="fixed inset-x-0 top-0 z-[60] h-10 overflow-hidden border-b border-white/[0.08] bg-slate-950/95 backdrop-blur"
       aria-hidden="true"
     >
       {/* LIVE FEED label */}
       <div className="pointer-events-none absolute left-0 top-0 z-10 flex h-full items-center bg-gradient-to-r from-slate-950 via-slate-950/95 to-transparent pl-3 pr-8">
-        <span className="text-[0.55rem] font-black uppercase tracking-widest text-orange-300">Live Feed</span>
+        <span className="font-mono text-xs font-semibold uppercase tracking-widest text-orange-300">Live Feed</span>
       </div>
 
       {/* Scrolling strip */}

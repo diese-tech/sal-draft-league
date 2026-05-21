@@ -11,8 +11,8 @@ export function NavShell({ children, ticker }: { children: React.ReactNode; tick
     <>
       {!hideChrome && ticker}
       {!hideChrome && <SiteNav />}
-      {/* pt-24 = ticker (32px) + nav (64px) */}
-      <div className={!hideChrome ? "pt-24" : undefined}>{children}</div>
+      {/* pt-[104px] = ticker (40px) + nav (64px) */}
+      <div className={!hideChrome ? "pt-[104px]" : undefined}>{children}</div>
       {!hideChrome && (
         <footer className="border-t border-white/10 mt-16 py-6 px-4 text-center text-xs text-white/40 leading-relaxed">
           The Serpent Ascension League is an independent community tournament and is not affiliated with, endorsed by, or

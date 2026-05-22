@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/admin-auth";
 import { getFirstDraftTurn, getNextDraftTurn, DRAFT_FORMAT, emptyDraftState } from "@/lib/god-draft-format";
+import { canRoleUseChat, effectiveChatChannel } from "@/lib/god-draft-rules";
 import { getLeagueData, getPlayerByDiscordId } from "@/lib/league-data";
 import { getAuthUser, getDiscordDisplayName, getDiscordId } from "@/lib/supabase-auth-server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
@@ -315,7 +316,8 @@ export async function requestGodDraftReset(sessionId: string) {
 
 export async function sendGodDraftChatMessage(sessionId: string, channel: DraftChatChannel, body: string) {
   const room = await requireSessionActor(sessionId);
-  const allowed = channel === "team" ? room.canChatTeam : room.canChatSpectator;
+  const routedChannel = effectiveChatChannel(room.role, channel);
+  const allowed = canRoleUseChat(room.role, routedChannel);
   if (!allowed) throw new Error("You cannot send messages to that channel.");
   const trimmed = body.trim().slice(0, 500);
   if (!trimmed) throw new Error("Message is required.");
@@ -323,7 +325,7 @@ export async function sendGodDraftChatMessage(sessionId: string, channel: DraftC
   if (!supabase) throw new Error("Supabase env is missing.");
   await supabase.from("draft_chat_messages").insert({
     session_id: sessionId,
-    channel,
+    channel: routedChannel,
     sender_name: room.role === "admin" ? "Admin" : room.isAuthenticated ? "Player" : "Spectator",
     body: trimmed,
   });

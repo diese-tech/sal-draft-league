@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeRedirectPath } from "@/lib/auth-redirect";
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/auth/error?message=missing_code`);
   }
 
-  const redirectPath = next?.startsWith("/") ? next : "/register";
+  const redirectPath = safeRedirectPath(next);
   const response = NextResponse.redirect(`${origin}${redirectPath}`);
 
   const supabase = createServerClient(

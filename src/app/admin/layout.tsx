@@ -10,6 +10,7 @@ const ADMIN_NAV = [
   { href: "/admin/teams", label: "Teams" },
   { href: "/admin/players", label: "Roster" },
   { href: "/admin/matches", label: "Schedule" },
+  { href: "/admin/match-report", label: "Match Report" },
   { href: "/admin/standings", label: "Standings" },
   { href: "/admin/seasons", label: "Seasons" },
   { href: "/admin/draft", label: "Draft" },

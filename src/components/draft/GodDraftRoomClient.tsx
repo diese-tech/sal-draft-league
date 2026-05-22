@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { TURN_SECONDS } from "@/lib/god-draft-format";
+import { canRoleSubmitDraftAction } from "@/lib/god-draft-rules";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import type { DraftChatChannel, DraftChatMessage, DraftSelection, GodDraftRoomData, GodDraftSession } from "@/types/god-draft";
 
@@ -94,7 +95,9 @@ export function GodDraftRoomClient({ initialData }: { initialData: GodDraftRoomD
     return true;
   });
   const activeSide = session.currentSide === "A" ? initialData.homeOrg.tag : session.currentSide === "B" ? initialData.awayOrg.tag : null;
-  const canAct = initialData.role === "admin" || initialData.side === session.currentSide;
+  const canAct = canRoleSubmitDraftAction(initialData.role, initialData.side, session.currentSide);
+  const canToggleReady = initialData.role === "home_captain" || initialData.role === "away_captain";
+  const canRequestReset = canToggleReady || initialData.role === "admin";
   const currentChat = messages.filter((m) => m.channel === channel);
 
   async function sendMessage() {
@@ -125,11 +128,13 @@ export function GodDraftRoomClient({ initialData }: { initialData: GodDraftRoomD
           <TeamPanel name={initialData.awayOrg.name} tag={initialData.awayOrg.tag} ready={session.awayReady} side="B" alignRight />
         </div>
         <div className="flex flex-wrap gap-2 border-t border-white/8 p-4">
-          {(initialData.role === "home_captain" || initialData.role === "away_captain" || initialData.role === "admin") && (
+          {canRequestReset && (
             <>
-              <button onClick={() => post("/api/draft/god/ready", { sessionId: session.id, ready: initialData.side === "A" ? !session.homeReady : !session.awayReady })} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-xs font-black uppercase text-emerald-100">
-                Toggle Ready
-              </button>
+              {canToggleReady && (
+                <button onClick={() => post("/api/draft/god/ready", { sessionId: session.id, ready: initialData.side === "A" ? !session.homeReady : !session.awayReady })} disabled={busy} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-xs font-black uppercase text-emerald-100">
+                  Toggle Ready
+                </button>
+              )}
               <button onClick={() => post("/api/draft/god/reset", { sessionId: session.id })} disabled={busy} className="rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-xs font-black uppercase text-amber-100">
                 Request Reset
               </button>

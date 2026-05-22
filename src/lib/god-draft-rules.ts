@@ -126,6 +126,13 @@ export function canRoleUseChat(role: DraftRole | null, channel: DraftChatChannel
   return role === "spectator";
 }
 
+export function canRoleSubmitDraftAction(role: DraftRole | null, actorSide: DraftSide | null, turnSide: DraftSide | null) {
+  if (!turnSide) return false;
+  if (role === "admin") return true;
+  if (role === "home_captain" || role === "away_captain") return actorSide === turnSide;
+  return false;
+}
+
 export function effectiveChatChannel(role: DraftRole | null, requested: DraftChatChannel): DraftChatChannel {
   if (role === "home_captain" || role === "away_captain" || role === "team") return "team";
   return requested;

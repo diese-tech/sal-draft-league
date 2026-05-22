@@ -6,6 +6,7 @@ import {
   applyDraftSelection,
   applyResetRequest,
   applyTimeout,
+  canRoleSubmitDraftAction,
   canRoleUseChat,
   canCreateGameSession,
   countDraftSlots,
@@ -188,6 +189,17 @@ describe("god draft vault and uniqueness rules", () => {
 });
 
 describe("god draft chat and auth redirect rules", () => {
+  it("matches draft action controls to server-side captain and admin authorization", () => {
+    expect(canRoleSubmitDraftAction("admin", null, "A")).toBe(true);
+    expect(canRoleSubmitDraftAction("home_captain", "A", "A")).toBe(true);
+    expect(canRoleSubmitDraftAction("away_captain", "B", "B")).toBe(true);
+    expect(canRoleSubmitDraftAction("home_captain", "A", "B")).toBe(false);
+    expect(canRoleSubmitDraftAction("team", "A", "A")).toBe(false);
+    expect(canRoleSubmitDraftAction("spectator", null, "A")).toBe(false);
+    expect(canRoleSubmitDraftAction(null, null, "A")).toBe(false);
+    expect(canRoleSubmitDraftAction("admin", null, null)).toBe(false);
+  });
+
   it("enforces team/spectator/admin chat access at API decision level", () => {
     expect(canRoleUseChat("team", "team")).toBe(true);
     expect(canRoleUseChat("spectator", "team")).toBe(false);

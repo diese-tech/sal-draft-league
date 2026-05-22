@@ -4,6 +4,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
+    "test:load": "vitest run tests/load",
     "test:e2e": "playwright test",
     "db:seed": "tsx scripts/seed-supabase.mjs"
   },
@@ -29,6 +31,7 @@
     "eslint-config-next": "^16.2.6",
     "tailwindcss": "^4.3.0",
     "tsx": "^4.22.1",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
   }
 }

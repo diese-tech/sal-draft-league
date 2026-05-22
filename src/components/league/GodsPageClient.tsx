@@ -77,6 +77,11 @@ function stableSort(stats: PlayerGodStats[], key: SortKey, direction: SortDirect
     .map(({ stat }) => stat);
 }
 
+export function getQualifiedHighestWinRateStats(stats: PlayerGodStats[]) {
+  const totalGames = stats.reduce((sum, stat) => sum + stat.gamesPlayed, 0);
+  return stableSort(stats.filter((stat) => stat.gamesPlayed >= 3), "winRate", "desc", totalGames);
+}
+
 function EmptyState({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-8 text-center text-sm font-semibold text-slate-500">
@@ -181,10 +186,7 @@ export function GodsPageClient({
 
   const stats = useMemo(() => statsByDivision[divisionFilter] ?? [], [divisionFilter, statsByDivision]);
   const totalGames = useMemo(() => stats.reduce((sum, stat) => sum + stat.gamesPlayed, 0), [stats]);
-  const highestWinRate = useMemo(
-    () => stableSort(stats.filter((stat) => stat.gamesPlayed >= 3), "winRate", "desc", totalGames),
-    [stats, totalGames],
-  );
+  const highestWinRate = useMemo(() => getQualifiedHighestWinRateStats(stats), [stats]);
   const tendencies = tendenciesByDivision[divisionFilter] ?? [];
 
   const handleSort = (key: SortKey) => {

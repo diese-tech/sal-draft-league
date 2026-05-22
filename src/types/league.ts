@@ -151,6 +151,7 @@ export interface PlayerMatchStat {
 /** Aggregated per god. Powers the God Pool cards on a player's profile page. */
 export interface PlayerGodStats {
   godPlayed: string;
+  godClass?: string;
   gamesPlayed: number;
   wins: number;
   /** 0–100, rounded to nearest integer */
@@ -163,6 +164,17 @@ export interface PlayerGodStats {
   avgDamage: number;
   /** null until damage_mitigated data is available */
   avgMitigated: number | null;
+  divisionIds?: DivisionId[];
+}
+
+export interface OrgGodTendency {
+  orgId: string;
+  orgName: string;
+  orgTag: string;
+  brandId?: string;
+  divisionIds: DivisionId[];
+  gamesPlayed: number;
+  topGods: PlayerGodStats[];
 }
 
 /**

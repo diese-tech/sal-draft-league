@@ -1,5 +1,7 @@
 import type {
   DivisionId,
+  Org,
+  OrgGodTendency,
   PlayerGodStats,
   PlayerMatchStat,
   PlayerSeasonSummary,
@@ -54,6 +56,24 @@ type GodStatRow = {
   damage_mitigated: number | null;
   won: boolean | null;
 };
+
+type LeagueGodStatRow = GodStatRow & {
+  matches: {
+    division_id: string;
+  };
+};
+
+type GodMetadata = {
+  godClass?: string;
+};
+
+function stringFromRecord(row: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return undefined;
+}
 
 function aggregateGods(rows: GodStatRow[]): PlayerGodStats[] {
   const byGod = new Map<string, GodAcc>();
@@ -447,18 +467,29 @@ export async function getOrgBrandGodStats(
   return aggregateGods((data ?? []) as unknown as GodStatRow[]);
 }
 
-export async function getLeagueGodStats(seasonId?: string): Promise<PlayerGodStats[]> {
+export async function getLeagueGodStats(seasonId?: string, divisionId?: DivisionId): Promise<PlayerGodStats[]> {
   const supabase = getSupabaseServerClient();
   if (!supabase) return [];
 
-  const matchJoin = seasonId ? ', matches!inner(season_id)' : '';
   let query = supabase
     .from('player_stats')
-    .select(`god_played, kills, deaths, assists, damage_dealt, damage_mitigated, won${matchJoin}`)
+    .select(`
+      god_played,
+      kills,
+      deaths,
+      assists,
+      damage_dealt,
+      damage_mitigated,
+      won,
+      matches!inner(season_id, division_id)
+    `)
     .not('won', 'is', null);
 
   if (seasonId) {
     query = query.eq('matches.season_id', seasonId);
+  }
+  if (divisionId) {
+    query = query.eq('matches.division_id', divisionId);
   }
 
   const { data, error } = await query;
@@ -467,5 +498,113 @@ export async function getLeagueGodStats(seasonId?: string): Promise<PlayerGodSta
     return [];
   }
 
-  return aggregateGods((data ?? []) as unknown as GodStatRow[]);
+  const rows = (data ?? []) as unknown as LeagueGodStatRow[];
+  const divisionIdsByGod = new Map<string, Set<DivisionId>>();
+
+  for (const row of rows) {
+    const god = row.god_played || 'Unknown';
+    if (!divisionIdsByGod.has(god)) divisionIdsByGod.set(god, new Set());
+    divisionIdsByGod.get(god)!.add(row.matches.division_id as DivisionId);
+  }
+
+  const { data: godRows, error: godError } = await supabase.from('gods').select('*');
+  const metadataByGod = new Map<string, GodMetadata>();
+  if (!godError) {
+    for (const row of (godRows ?? []) as Record<string, unknown>[]) {
+      const name = stringFromRecord(row, ['name', 'god_name', 'godPlayed', 'god_played']);
+      if (!name) continue;
+      metadataByGod.set(name.toLowerCase(), {
+        godClass: stringFromRecord(row, ['class', 'god_class', 'role']),
+      });
+    }
+  } else {
+    console.error('getLeagueGodStats gods metadata error:', godError.message);
+  }
+
+  return aggregateGods(rows).map((stat) => ({
+    ...stat,
+    godClass: metadataByGod.get(stat.godPlayed.toLowerCase())?.godClass,
+    divisionIds: Array.from(divisionIdsByGod.get(stat.godPlayed) ?? []),
+  }));
+}
+
+export async function getOrgGodTendencies(orgs: Org[], seasonId?: string, divisionId?: DivisionId): Promise<OrgGodTendency[]> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase || orgs.length === 0) return [];
+
+  type OrgStatRow = GodStatRow & {
+    matches: {
+      season_id: string | null;
+      division_id: string;
+    };
+    player: {
+      org_id: string | null;
+    };
+  };
+
+  const orgById = new Map(orgs.map((org) => [org.id, org]));
+  const groupMeta = new Map<string, OrgGodTendency>();
+  const rowsByGroup = new Map<string, GodStatRow[]>();
+
+  let query = supabase
+    .from('player_stats')
+    .select(`
+      god_played,
+      kills,
+      deaths,
+      assists,
+      damage_dealt,
+      damage_mitigated,
+      won,
+      matches!inner(season_id, division_id),
+      player:players!inner(org_id)
+    `)
+    .not('won', 'is', null);
+
+  if (seasonId) {
+    query = query.eq('matches.season_id', seasonId);
+  }
+  if (divisionId) {
+    query = query.eq('matches.division_id', divisionId);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('getOrgGodTendencies error:', error.message);
+    return [];
+  }
+
+  for (const row of (data ?? []) as unknown as OrgStatRow[]) {
+    if (!row.player.org_id) continue;
+    const org = orgById.get(row.player.org_id);
+    if (!org) continue;
+
+    const groupId = org.brandId ?? org.id;
+    if (!groupMeta.has(groupId)) {
+      const groupedOrgs = org.brandId ? orgs.filter((candidate) => candidate.brandId === org.brandId) : [org];
+      groupMeta.set(groupId, {
+        orgId: org.id,
+        orgName: org.brandId ? org.name.replace(/\s+(Solar|Lunar|Gaia)$/i, '') : org.name,
+        orgTag: org.tag,
+        brandId: org.brandId,
+        divisionIds: Array.from(new Set(groupedOrgs.map((candidate) => candidate.divisionId))),
+        gamesPlayed: 0,
+        topGods: [],
+      });
+      rowsByGroup.set(groupId, []);
+    }
+
+    groupMeta.get(groupId)!.gamesPlayed += 1;
+    rowsByGroup.get(groupId)!.push(row);
+  }
+
+  return Array.from(groupMeta.entries())
+    .map(([groupId, tendency]) => ({
+      ...tendency,
+      topGods: aggregateGods(rowsByGroup.get(groupId) ?? []).slice(0, 5),
+    }))
+    .sort((a, b) => {
+      const games = b.gamesPlayed - a.gamesPlayed;
+      return games !== 0 ? games : a.orgName.localeCompare(b.orgName);
+    });
 }

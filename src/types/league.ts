@@ -120,3 +120,87 @@ export interface LeagueData {
   announcements: Announcement[];
   lastUpdated: string;
 }
+
+// ── Per-game stat types ──────────────────────────────────────────────────────────────────
+
+/** One row per game played. Powers the Match History table on a player's profile page. */
+export interface PlayerMatchStat {
+  matchId: string;
+  gameNumber: number;
+  godPlayed: string;
+  role: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  damageDealt: number;
+  /** null until ForgeLens begins extracting the mitigation column */
+  damageMitigated: number | null;
+  healingDone: number | null;
+  won: boolean;
+  opponentOrgId: string;
+  opponentOrgName: string;
+  opponentOrgTag: string;
+  /** matches.scheduled_date */
+  matchDate: string;
+  /** matches.division_id — shows which division this game was played in */
+  divisionId: DivisionId;
+  seasonId: string;
+}
+
+/** Aggregated per god. Powers the God Pool cards on a player's profile page. */
+export interface PlayerGodStats {
+  godPlayed: string;
+  gamesPlayed: number;
+  wins: number;
+  /** 0–100, rounded to nearest integer */
+  winRate: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  /** (kills + assists) / max(deaths, 1) */
+  kda: number;
+  avgDamage: number;
+  /** null until damage_mitigated data is available */
+  avgMitigated: number | null;
+}
+
+/**
+ * One row per season+division combination for a player.
+ * A player who subbed up to a higher division produces two rows for the same season.
+ * Powers the Season History table on a player's profile page.
+ */
+export interface PlayerSeasonSummary {
+  seasonId: string;
+  seasonName: string;
+  divisionId: DivisionId;
+  orgId: string;
+  orgName: string;
+  orgTag: string;
+  role: string;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  /** (kills + assists) / max(deaths, 1) across all games in this season+division */
+  kda: number;
+}
+
+/** Per-player aggregate row for the team roster stats table on an org's page. */
+export interface TeamPlayerStat {
+  playerId: string;
+  ign: string;
+  primaryRole: import("@/types/card-lab").PlayerRole;
+  gamesPlayed: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  /** (kills + assists) / max(deaths, 1) */
+  kda: number;
+  /** 0–100, rounded to nearest integer */
+  winRate: number;
+  totalDamage: number;
+  avgDamage: number;
+  /** null until damage_mitigated data is available */
+  totalMitigated: number | null;
+  /** null until damage_mitigated data is available */
+  avgMitigated: number | null;
+}

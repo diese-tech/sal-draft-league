@@ -31,6 +31,7 @@ export interface Org {
   logoGradient: string;
   primaryColor: string;
   accentGradient: string;
+  brandId?: string;
   captainId?: string;
   founded?: string;
   socialLinks?: {
@@ -121,7 +122,7 @@ export interface LeagueData {
   lastUpdated: string;
 }
 
-// ── Per-game stat types ──────────────────────────────────────────────────────────────────
+// ── Per-game stat types ─────────────────────────────────────────────────────────────────────────
 
 /** One row per game played. Powers the Match History table on a player's profile page. */
 export interface PlayerMatchStat {

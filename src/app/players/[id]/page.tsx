@@ -1,11 +1,30 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import type { DivisionId } from "@/types/league";
+import type { DivisionId, PlayerRole } from "@/types/league";
 import { AvatarMark, RolePill } from "@/components/card-lab/ui";
+import { GodPoolGrid } from "@/components/league/GodPoolGrid";
 import { getLeagueData } from "@/lib/league-data";
+import { getPlayerGodStats, getPlayerMatchHistory, getPlayerSeasonSummaries } from "@/lib/stats-data";
 import { cn } from "@/lib/utils";
 
 export const revalidate = 30;
+
+const VALID_ROLES = new Set<string>(["Solo", "Jungle", "Mid", "Carry", "Support", "Flex"]);
+
+function fmtDate(d: string) {
+  const [y, m, day] = d.split("-").map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function fmtN(n: number) {
+  return n.toLocaleString("en-US");
+}
+
+const divisionShort: Record<DivisionId, string> = {
+  solar: "Sol",
+  lunar: "Lun",
+  gaia: "Gaia",
+};
 
 const divisionBadge: Record<DivisionId, string> = {
   solar: "border-orange-300/40 bg-orange-400/15 text-orange-100",
@@ -44,18 +63,28 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function PlayerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { players, orgs } = await getLeagueData();
+  const { players, orgs, season } = await getLeagueData();
 
   const player = players.find((p) => p.id === id);
   if (!player) notFound();
 
   const org = orgs.find((o) => o.id === player.orgId);
-  const kda = player.stats && player.stats.deaths > 0
-    ? ((player.stats.kills + player.stats.assists) / player.stats.deaths).toFixed(2)
-    : player.stats ? String(player.stats.kills + player.stats.assists) : null;
-  const winPct = player.stats && player.stats.gamesPlayed > 0
-    ? Math.round((player.stats.wins / player.stats.gamesPlayed) * 100)
-    : null;
+  const kda =
+    player.stats && player.stats.deaths > 0
+      ? ((player.stats.kills + player.stats.assists) / player.stats.deaths).toFixed(2)
+      : player.stats
+        ? String(player.stats.kills + player.stats.assists)
+        : null;
+  const winPct =
+    player.stats && player.stats.gamesPlayed > 0
+      ? Math.round((player.stats.wins / player.stats.gamesPlayed) * 100)
+      : null;
+
+  const [godStats, matchHistory, seasonSummaries] = await Promise.all([
+    getPlayerGodStats(id, season.id),
+    getPlayerMatchHistory(id, season.id),
+    getPlayerSeasonSummaries(id),
+  ]);
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
@@ -134,7 +163,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Season Stats */}
       {player.stats && player.stats.gamesPlayed > 0 && (
         <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-5">
           <p className="mb-4 text-[0.65rem] font-black uppercase text-slate-300">Season Stats</p>
@@ -155,6 +184,165 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
       )}
+
+      {/* God Pool */}
+      <div className="mt-4">
+        <GodPoolGrid stats={godStats} />
+      </div>
+
+      {/* Match History */}
+      <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-5">
+        <p className="mb-4 text-[0.65rem] font-black uppercase text-slate-300">Match History</p>
+        {matchHistory.length === 0 ? (
+          <div className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-6 text-center text-sm text-slate-500">
+            No matches recorded yet
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-xs">
+              <thead>
+                <tr className="border-b border-white/8">
+                  {(["Date", "Div", "Opponent", "W/L", "Role", "God", "K", "D", "A", "DMG", "MIT"] as const).map((h) => (
+                    <th
+                      key={h}
+                      className={cn(
+                        "pb-2 font-black uppercase text-slate-500",
+                        ["K", "D", "A", "DMG", "MIT"].includes(h) ? "text-right" : "text-left",
+                      )}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {matchHistory.map((row, i) => (
+                  <tr key={`${row.matchId}-${i}`} className="hover:bg-white/[0.02]">
+                    <td className="py-2 pr-3 whitespace-nowrap font-black text-slate-400">
+                      {row.gameNumber === 1 ? (
+                        fmtDate(row.matchDate)
+                      ) : (
+                        <span className="text-slate-600">G{row.gameNumber}</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span className={cn("rounded border px-1.5 py-0.5 text-[0.6rem] font-black uppercase", divisionBadge[row.divisionId])}>
+                        {divisionShort[row.divisionId]}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3">
+                      {row.opponentOrgId ? (
+                        <Link
+                          href={`/teams/${row.opponentOrgId}`}
+                          className="inline-flex items-center gap-1 font-black text-slate-300 transition-colors hover:text-cyan-200"
+                        >
+                          <span className="rounded border border-white/10 bg-white/[0.04] px-1 py-0.5 font-mono text-[0.6rem] text-slate-500">
+                            {row.opponentOrgTag}
+                          </span>
+                          {row.opponentOrgName}
+                        </Link>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-center">
+                      <span className={cn("font-black", row.won ? "text-emerald-400" : "text-red-400")}>
+                        {row.won ? "W" : "L"}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3">
+                      {VALID_ROLES.has(row.role) ? (
+                        <RolePill role={row.role as PlayerRole} compact />
+                      ) : (
+                        <span className="text-slate-600">{row.role || "—"}</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 whitespace-nowrap font-black text-slate-300">{row.godPlayed || "—"}</td>
+                    <td className="py-2 pr-3 text-right font-black text-white">{row.kills}</td>
+                    <td className="py-2 pr-3 text-right font-black text-white">{row.deaths}</td>
+                    <td className="py-2 pr-3 text-right font-black text-white">{row.assists}</td>
+                    <td className="py-2 pr-3 text-right font-black text-slate-300">{fmtN(row.damageDealt)}</td>
+                    <td className="py-2 text-right font-black text-slate-300">
+                      {row.damageMitigated != null ? fmtN(row.damageMitigated) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Season History */}
+      <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/60 p-5">
+        <p className="mb-4 text-[0.65rem] font-black uppercase text-slate-300">Season History</p>
+        {seasonSummaries.length === 0 ? (
+          <div className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-6 text-center text-sm text-slate-500">
+            No season history recorded yet
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[500px] text-xs">
+              <thead>
+                <tr className="border-b border-white/8">
+                  {(["Season", "Division", "Team", "Role", "Games", "W-L", "KDA"] as const).map((h) => (
+                    <th
+                      key={h}
+                      className={cn(
+                        "pb-2 font-black uppercase text-slate-500",
+                        ["Games", "W-L", "KDA"].includes(h) ? "text-right" : "text-left",
+                      )}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {seasonSummaries.map((s, i) => (
+                  <tr key={i} className="hover:bg-white/[0.02]">
+                    <td className="py-2 pr-3 font-black text-slate-300">{s.seasonName}</td>
+                    <td className="py-2 pr-3">
+                      <span className={cn("rounded border px-1.5 py-0.5 text-[0.6rem] font-black uppercase", divisionBadge[s.divisionId])}>
+                        {divisionName[s.divisionId]}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3">
+                      {s.orgId ? (
+                        <Link
+                          href={`/teams/${s.orgId}`}
+                          className="inline-flex items-center gap-1 font-black text-slate-300 transition-colors hover:text-cyan-200"
+                        >
+                          <span className="rounded border border-white/10 bg-white/[0.04] px-1 py-0.5 font-mono text-[0.6rem] text-slate-500">
+                            {s.orgTag}
+                          </span>
+                          {s.orgName}
+                        </Link>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {VALID_ROLES.has(s.role) ? (
+                        <RolePill role={s.role as PlayerRole} compact />
+                      ) : (
+                        <span className="text-slate-600">{s.role || "—"}</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-right font-black text-white">{s.gamesPlayed}</td>
+                    <td className="py-2 pr-3 text-right font-black text-slate-300">
+                      {s.wins}-{s.losses}
+                    </td>
+                    <td className="py-2 text-right font-black">
+                      <span className={cn(s.kda >= 2 ? "text-emerald-400" : "text-red-400")}>{s.kda.toFixed(2)}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </main>
   );
 }

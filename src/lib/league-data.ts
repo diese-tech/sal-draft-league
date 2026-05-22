@@ -7,7 +7,7 @@ import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 type DbDivision = Omit<Division, "accentColor"> & { accent_color: string };
 
-type DbOrg = Omit<Org, "divisionId" | "logoInitials" | "logoGradient" | "primaryColor" | "accentGradient" | "captainId" | "socialLinks" | "archivedAt" | "deletionScheduledAt"> & {
+type DbOrg = Omit<Org, "divisionId" | "logoInitials" | "logoGradient" | "primaryColor" | "accentGradient" | "captainId" | "socialLinks" | "archivedAt" | "deletionScheduledAt" | "brandId"> & {
   division_id: Org["divisionId"];
   logo_initials: string;
   logo_gradient: string;
@@ -17,6 +17,7 @@ type DbOrg = Omit<Org, "divisionId" | "logoInitials" | "logoGradient" | "primary
   social_links?: Org["socialLinks"] | null;
   archived_at?: string | null;
   deletion_scheduled_at?: string | null;
+  brand_id?: string | null;
 };
 
 type DbPlayer = Omit<LeaguePlayer, "orgId" | "discordUsername" | "avatarInitials" | "avatarGradient" | "primaryRole" | "secondaryRoles" | "isStarter" | "isCaptain" | "divisionId" | "archivedAt" | "deletionScheduledAt"> & {
@@ -71,6 +72,7 @@ function fromDbOrg(row: DbOrg): Org {
     captainId: row.captain_id ?? undefined,
     founded: row.founded,
     socialLinks: row.social_links ?? undefined,
+    brandId: row.brand_id ?? undefined,
     archivedAt: row.archived_at ?? undefined,
     deletionScheduledAt: row.deletion_scheduled_at ?? undefined,
   };
@@ -99,6 +101,7 @@ function toDbOrg(org: Org): DbOrg {
     captain_id: org.captainId ?? null,
     founded: org.founded,
     social_links: org.socialLinks ?? null,
+    brand_id: org.brandId ?? null,
   };
 }
 
@@ -324,7 +327,7 @@ export async function getAdminLeagueData(): Promise<LeagueData> {
   }
 }
 
-// ─── Seasons ─────────────────────────────────────────────────────────────────
+// ─── Seasons ────────────────────────────────────────────────────────────────────────────────
 
 export async function getAllSeasons(): Promise<Season[]> {
   const supabase = getSupabaseServerClient();
@@ -359,7 +362,6 @@ export async function saveSeason(season: Season): Promise<void> {
 export async function advanceWeek(seasonId: string): Promise<void> {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase env is missing.");
-  // Fetch current week then increment in JS — avoids needing a DB function
   const { data, error: fetchErr } = await supabase.from("seasons").select("current_week").eq("id", seasonId).single();
   if (fetchErr) throw fetchErr;
   const nextWeek = ((data as { current_week: number }).current_week ?? 0) + 1;
@@ -368,7 +370,7 @@ export async function advanceWeek(seasonId: string): Promise<void> {
   await writeAuditLog("advance_week", "season", seasonId, { week: nextWeek });
 }
 
-// ─── Org write ────────────────────────────────────────────────────────────────
+// ─── Org write ─────────────────────────────────────────────────────────────────────────────
 
 export async function saveOrg(org: Org): Promise<void> {
   const supabase = getSupabaseServerClient();
@@ -378,7 +380,7 @@ export async function saveOrg(org: Org): Promise<void> {
   await writeAuditLog("save_org", "org", org.id, { name: org.name, tag: org.tag, divisionId: org.divisionId });
 }
 
-// ─── Archive / soft-delete ────────────────────────────────────────────────────
+// ─── Archive / soft-delete ──────────────────────────────────────────────────────────────────
 
 type SoftDeleteTable = "players" | "orgs" | "matches";
 
@@ -402,7 +404,6 @@ export async function scheduleDelete(table: SoftDeleteTable, id: string): Promis
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase env is missing.");
   const now = new Date().toISOString();
-  // Also archive the record if it isn't already (ensures it's hidden from public)
   const { error } = await supabase.from(table).update({ deletion_scheduled_at: now, archived_at: now }).eq("id", id);
   if (error) throw error;
   await writeAuditLog("schedule_delete", table.slice(0, -1), id, {});
@@ -411,7 +412,6 @@ export async function scheduleDelete(table: SoftDeleteTable, id: string): Promis
 export async function cancelScheduledDelete(table: SoftDeleteTable, id: string): Promise<void> {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase env is missing.");
-  // Clear the deletion schedule but leave archived_at intact
   const { error } = await supabase.from(table).update({ deletion_scheduled_at: null }).eq("id", id);
   if (error) throw error;
   await writeAuditLog("cancel_schedule_delete", table.slice(0, -1), id, {});
@@ -420,7 +420,6 @@ export async function cancelScheduledDelete(table: SoftDeleteTable, id: string):
 export async function hardDelete(table: SoftDeleteTable, id: string): Promise<void> {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase env is missing.");
-  // Guard: only hard-delete records that are explicitly scheduled for deletion
   const { data, error: fetchErr } = await supabase.from(table).select("deletion_scheduled_at").eq("id", id).single();
   if (fetchErr) throw fetchErr;
   if (!(data as { deletion_scheduled_at: string | null }).deletion_scheduled_at) {
@@ -599,7 +598,6 @@ export async function recalculateAndPersistStandings() {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase env is missing.");
 
-  // Fetch live data directly — bypass getLeagueData() to avoid mock fallback corrupting standings
   const [orgRes, matchRes] = await Promise.all([
     supabase.from("orgs").select("*").order("name"),
     supabase.from("matches").select("*").order("scheduled_date").order("scheduled_time"),
@@ -607,12 +605,10 @@ export async function recalculateAndPersistStandings() {
   if (orgRes.error) throw orgRes.error;
   if (matchRes.error) throw matchRes.error;
 
-  // Use uncached fetchLeagueData so recalc always sees the latest data, not a 30s-old snapshot.
   const data = await fetchLeagueData();
   if (data === MOCK_LEAGUE_DATA) throw new Error("Cannot recalculate standings: Supabase data unavailable.");
 
   const standings = recalcStandings(data);
-  // Upsert first, then remove any orgs that no longer exist to keep the table clean
   const { error } = await supabase.from("standings").upsert(standings.map(toDbStanding));
   if (error) throw error;
   const currentOrgIds = standings.map((s) => s.orgId);
@@ -623,7 +619,7 @@ export async function recalculateAndPersistStandings() {
   return standings;
 }
 
-// ─── Form Fields ─────────────────────────────────────────────────────────────
+// ─── Form Fields ───────────────────────────────────────────────────────────────────────────
 
 function fromDbFormField(row: Record<string, unknown>): FormField {
   return {
@@ -678,7 +674,7 @@ export async function deleteFormField(id: string): Promise<void> {
   if (error) throw error;
 }
 
-// ─── Registrations ───────────────────────────────────────────────────────────
+// ─── Registrations ─────────────────────────────────────────────────────────────────────────
 
 function fromDbRegistration(row: Record<string, unknown>): Registration {
   return {

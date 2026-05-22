@@ -1,13 +1,21 @@
 import { notFound } from "next/navigation";
-import type { DivisionId } from "@/types/league";
-import { GlowPanel, OrgLogo } from "@/components/card-lab/ui";
+import type { DivisionId, PlayerRole } from "@/types/league";
+import { GlowPanel, OrgLogo, RolePill } from "@/components/card-lab/ui";
+import { GodPoolGrid } from "@/components/league/GodPoolGrid";
 import { OrgRosterPanel } from "@/components/league/OrgRosterPanel";
 import { MatchCard } from "@/components/league/MatchCard";
 import { getLeagueData } from "@/lib/league-data";
+import { getTeamRosterStats, getOrgBrandGodStats } from "@/lib/stats-data";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
 export const revalidate = 30;
+
+const VALID_ROLES = new Set<string>(["Solo", "Jungle", "Mid", "Carry", "Support", "Flex"]);
+
+function fmtN(n: number) {
+  return n.toLocaleString("en-US");
+}
 
 const divisionAccent: Record<DivisionId, { badge: string; bar: string; header: string; name: string }> = {
   solar: {
@@ -44,7 +52,7 @@ export async function generateMetadata({ params }: { params: Promise<{ teamId: s
 
 export default async function TeamPage({ params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = await params;
-  const { orgs, players, matches, standings } = await getLeagueData();
+  const { orgs, players, matches, standings, season } = await getLeagueData();
 
   const org = orgs.find((o) => o.id === teamId);
   if (!org) notFound();
@@ -64,11 +72,27 @@ export default async function TeamPage({ params }: { params: Promise<{ teamId: s
     .sort((a, b) => b.scheduledDate.localeCompare(a.scheduledDate) || b.scheduledTime.localeCompare(a.scheduledTime))
     .slice(0, 3);
 
-  const winPct = standing && standing.matchesPlayed > 0 ? ((standing.wins / standing.matchesPlayed) * 100).toFixed(0) : "—";
+  const winPct =
+    standing && standing.matchesPlayed > 0
+      ? ((standing.wins / standing.matchesPlayed) * 100).toFixed(0)
+      : "—";
+
+  const [rosterStats, brandGodStats] = await Promise.all([
+    getTeamRosterStats(org.id, season.id),
+    org.brandId ? getOrgBrandGodStats(org.brandId, season.id) : Promise.resolve([]),
+  ]);
+
+  const brandDisplayName = org.name
+    .replace(/\s+(Solar|Lunar|Gaia)\s+Division$/i, "")
+    .replace(/\s+(Solar|Lunar|Gaia)$/i, "")
+    .trim();
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-      <Link href="/teams" className="mb-5 inline-flex items-center gap-1.5 text-xs font-black uppercase text-slate-500 transition-colors hover:text-slate-300">
+      <Link
+        href="/teams"
+        className="mb-5 inline-flex items-center gap-1.5 text-xs font-black uppercase text-slate-500 transition-colors hover:text-slate-300"
+      >
         ← All Teams
       </Link>
 
@@ -142,12 +166,18 @@ export default async function TeamPage({ params }: { params: Promise<{ teamId: s
               <p className="mb-2 text-[0.68rem] font-black uppercase tracking-normal text-slate-300">Links</p>
               <div className="flex flex-wrap gap-2">
                 {org.socialLinks.discord && (
-                  <a href={org.socialLinks.discord} className="rounded-xl border border-fuchsia-300/30 bg-fuchsia-300/10 px-3 py-1.5 text-xs font-black uppercase text-fuchsia-100 transition hover:bg-fuchsia-300/15">
+                  <a
+                    href={org.socialLinks.discord}
+                    className="rounded-xl border border-fuchsia-300/30 bg-fuchsia-300/10 px-3 py-1.5 text-xs font-black uppercase text-fuchsia-100 transition hover:bg-fuchsia-300/15"
+                  >
                     Discord
                   </a>
                 )}
                 {org.socialLinks.twitch && (
-                  <a href={org.socialLinks.twitch} className="rounded-xl border border-violet-300/30 bg-violet-300/10 px-3 py-1.5 text-xs font-black uppercase text-violet-100 transition hover:bg-violet-300/15">
+                  <a
+                    href={org.socialLinks.twitch}
+                    className="rounded-xl border border-violet-300/30 bg-violet-300/10 px-3 py-1.5 text-xs font-black uppercase text-violet-100 transition hover:bg-violet-300/15"
+                  >
                     Twitch
                   </a>
                 )}
@@ -156,6 +186,98 @@ export default async function TeamPage({ params }: { params: Promise<{ teamId: s
           )}
         </div>
       </div>
+
+      {/* Roster Stats */}
+      <div className="mt-8 rounded-2xl border border-white/10 bg-slate-950/60 p-5">
+        <p className="mb-4 text-[0.65rem] font-black uppercase text-slate-300">Roster Stats</p>
+        {rosterStats.length === 0 ? (
+          <div className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-6 text-center text-sm text-slate-500">
+            No stats recorded for this season yet
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px] text-xs">
+              <thead>
+                <tr className="border-b border-white/8">
+                  {(["Player", "Role", "Games", "K / D / A", "KDA", "Win Rate", "Damage", "Mitigated"] as const).map((h) => (
+                    <th
+                      key={h}
+                      className={cn(
+                        "pb-2 font-black uppercase text-slate-500",
+                        ["Games", "K / D / A", "KDA", "Win Rate", "Damage", "Mitigated"].includes(h)
+                          ? "text-right"
+                          : "text-left",
+                      )}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {rosterStats.map((p) => (
+                  <tr key={p.playerId} className="hover:bg-white/[0.02]">
+                    <td className="py-2 pr-3">
+                      <Link
+                        href={`/players/${p.playerId}`}
+                        className="font-black text-slate-200 transition-colors hover:text-cyan-200"
+                      >
+                        {p.ign}
+                      </Link>
+                    </td>
+                    <td className="py-2 pr-3">
+                      {VALID_ROLES.has(p.primaryRole) ? (
+                        <RolePill role={p.primaryRole as PlayerRole} compact />
+                      ) : (
+                        <span className="text-slate-600">{p.primaryRole}</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-right font-black text-white">{p.gamesPlayed}</td>
+                    <td className="py-2 pr-3 text-right font-black text-slate-300">
+                      <span>
+                        {p.kills} / {p.deaths} / {p.assists}
+                      </span>
+                      <span className="block text-[0.6rem] text-slate-600">
+                        {(p.kills / p.gamesPlayed).toFixed(1)} / {(p.deaths / p.gamesPlayed).toFixed(1)} /{" "}
+                        {(p.assists / p.gamesPlayed).toFixed(1)}/g
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-right font-black">
+                      <span className={cn(p.kda >= 2 ? "text-emerald-400" : "text-red-400")}>{p.kda.toFixed(2)}</span>
+                    </td>
+                    <td className="py-2 pr-3 text-right font-black">
+                      <span className={cn(p.winRate >= 50 ? "text-emerald-400" : "text-red-400")}>{p.winRate}%</span>
+                    </td>
+                    <td className="py-2 pr-3 text-right font-black text-slate-300">
+                      <span>{fmtN(p.totalDamage)}</span>
+                      <span className="block text-[0.6rem] text-slate-600">{fmtN(p.avgDamage)}/g</span>
+                    </td>
+                    <td className="py-2 text-right font-black text-slate-300">
+                      {p.totalMitigated != null ? (
+                        <>
+                          <span>{fmtN(p.totalMitigated)}</span>
+                          <span className="block text-[0.6rem] text-slate-600">
+                            {p.avgMitigated != null ? fmtN(p.avgMitigated) : "—"}/g
+                          </span>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Brand God Tendency */}
+      {org.brandId && brandGodStats.length > 0 && (
+        <div className="mt-4">
+          <GodPoolGrid stats={brandGodStats} subtitle={`${brandDisplayName} teams`} />
+        </div>
+      )}
     </main>
   );
 }

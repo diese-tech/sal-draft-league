@@ -3,7 +3,7 @@ import { z } from "zod";
 import { isAdminRequest, getAdminRequestSession } from "@/lib/admin-auth";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminLeagueData } from "@/lib/league-data";
-import type { MatchReportWithMatch } from "@/types/match-report";
+import type { ExtractedGame, MatchReportWithMatch } from "@/types/match-report";
 import type { DivisionId } from "@/types/league";
 
 const createSchema = z.object({
@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
       awayScore: row.away_score as number | undefined,
       totalGames: row.total_games as number | undefined,
       screenshotUrls: (row.screenshot_urls as string[]) ?? [],
+      extractedData: (row.extracted_data as ExtractedGame[] | null) ?? undefined,
       createdAt: row.created_at as string,
       reviewedAt: row.reviewed_at as string | undefined,
       reviewedBy: row.reviewed_by as string | undefined,

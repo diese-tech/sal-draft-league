@@ -26,8 +26,8 @@ jobs:
 
       - name: Check for service-role key exposure in client code
         run: |
-          if grep -r "SUPABASE_SERVICE_ROLE_KEY" src/ --include="*.ts" --include="*.tsx" | grep -v "supabase-admin\|admin-client\|supabaseAdmin\|// " ; then
-            echo "WARNING: SUPABASE_SERVICE_ROLE_KEY referenced in src/ — verify this is server-only code"
+          if grep -r "SUPABASE_SERVICE_ROLE_KEY" src/ --include="*.ts" --include="*.tsx" | grep -v "supabase-admin\|admin-client\|supabaseAdmin\|supabase-server\|/api/\|// " ; then
+            echo "ERROR: SUPABASE_SERVICE_ROLE_KEY found in a non-server file"
             exit 1
           fi
           true

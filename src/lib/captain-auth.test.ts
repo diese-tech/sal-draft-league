@@ -1,6 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
-import { getCaptainSessionFromRequest } from "./captain-auth";
+import { getCaptainSessionFromRequest, exchangeToken } from "./captain-auth";
+
+vi.mock("@/lib/draft-data", () => ({
+  verifyCaptainToken: vi.fn(),
+}));
+
+import { verifyCaptainToken } from "@/lib/draft-data";
 
 const COOKIE = "sal_captain_session";
 
@@ -11,6 +17,36 @@ function makeRequest(cookieValue?: string): NextRequest {
   }
   return new NextRequest("http://localhost/api/draft/test", { headers });
 }
+
+const mockVerify = vi.mocked(verifyCaptainToken);
+
+describe("exchangeToken", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the session when verifyCaptainToken resolves a valid session", async () => {
+    const session = { draftRoomId: "draft-room-1", orgId: "helix-reign" };
+    mockVerify.mockResolvedValue(session);
+    expect(await exchangeToken("valid-token")).toEqual(session);
+    expect(mockVerify).toHaveBeenCalledWith("valid-token");
+  });
+
+  it("returns null when verifyCaptainToken returns null (invalid token)", async () => {
+    mockVerify.mockResolvedValue(null);
+    expect(await exchangeToken("bad-token")).toBeNull();
+  });
+
+  it("returns null when verifyCaptainToken returns null (expired token)", async () => {
+    mockVerify.mockResolvedValue(null);
+    expect(await exchangeToken("expired-token")).toBeNull();
+  });
+
+  it("propagates rejection from verifyCaptainToken (unexpected DB error)", async () => {
+    mockVerify.mockRejectedValue(new Error("db error"));
+    await expect(exchangeToken("any-token")).rejects.toThrow("db error");
+  });
+});
 
 describe("getCaptainSessionFromRequest", () => {
   it("returns null when cookie is absent", () => {

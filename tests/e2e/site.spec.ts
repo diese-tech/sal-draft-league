@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createHmac } from "crypto";
 
 const publicRoutes = [
   { path: "/", heading: "Serpent" },
@@ -1002,5 +1003,95 @@ test.describe("MarkdownBody XSS and link safety", () => {
   test("bare domain with no protocol is neutralized to #", async ({ page }) => {
     const href = await getPreviewLinkHref(page, "[click me](example.com)");
     expect(href).toBe("#");
+  });
+});
+
+// --- Superadmin vs admin role authorization (#89) ---
+// Crafts HMAC-signed session cookies directly using the known test secret,
+// so we can test the auth gate without needing a second login route.
+
+function craftSessionCookie(role: "super_admin" | "admin"): string {
+  const secret = process.env.ADMIN_SESSION_SECRET ?? "test-admin-session-secret";
+  const payload = JSON.stringify({
+    discordId: "test-role-user",
+    role,
+    exp: Date.now() + 8 * 60 * 60 * 1000,
+  });
+  const encoded = Buffer.from(payload).toString("base64url");
+  const sig = createHmac("sha256", secret).update(encoded).digest("hex");
+  return `${encoded}.${sig}`;
+}
+
+test.describe("Superadmin vs admin role authorization", () => {
+  test("regular admin is rejected (403) by superadmin-only DELETE org route", async ({ request }) => {
+    const cookie = craftSessionCookie("admin");
+    const response = await request.delete("/api/admin/orgs/any-org-id", {
+      headers: { cookie: `sal_admin_session=${cookie}` },
+    });
+    expect(response.status()).toBe(403);
+    const body = await response.json();
+    expect(body.error).toMatch(/superadmin/i);
+  });
+
+  test("regular admin is rejected (403) by superadmin-only DELETE player route", async ({ request }) => {
+    const cookie = craftSessionCookie("admin");
+    const response = await request.delete("/api/admin/players/any-player-id", {
+      headers: { cookie: `sal_admin_session=${cookie}` },
+    });
+    expect(response.status()).toBe(403);
+  });
+
+  test("super_admin session passes the auth gate on DELETE org (not 403)", async ({ request }) => {
+    const cookie = craftSessionCookie("super_admin");
+    const response = await request.delete("/api/admin/orgs/nonexistent-org", {
+      headers: { cookie: `sal_admin_session=${cookie}` },
+    });
+    // Auth gate passes; Supabase may return an error in the test env — just not 403
+    expect(response.status()).not.toBe(403);
+    expect(response.status()).not.toBe(401);
+  });
+
+  test("unauthenticated DELETE org is rejected (401)", async ({ request }) => {
+    const response = await request.delete("/api/admin/orgs/any-org-id");
+    expect(response.status()).toBe(401);
+  });
+});
+
+// --- CSRF and cookie security attributes (#90) ---
+
+test.describe("CSRF protection — session cookie attributes", () => {
+  test("login response sets HttpOnly session cookie", async ({ request }) => {
+    const response = await request.post("/api/admin/login", {
+      data: { password: "test-admin-password" },
+    });
+    expect(response.ok()).toBe(true);
+    const setCookie = response.headers()["set-cookie"] ?? "";
+    expect(setCookie).toContain("sal_admin_session=");
+    expect(setCookie).toContain("HttpOnly");
+  });
+
+  test("login response sets SameSite=Lax on session cookie", async ({ request }) => {
+    const response = await request.post("/api/admin/login", {
+      data: { password: "test-admin-password" },
+    });
+    const setCookie = response.headers()["set-cookie"] ?? "";
+    expect(setCookie.toLowerCase()).toContain("samesite=lax");
+  });
+
+  test("login response sets Path=/ on session cookie", async ({ request }) => {
+    const response = await request.post("/api/admin/login", {
+      data: { password: "test-admin-password" },
+    });
+    const setCookie = response.headers()["set-cookie"] ?? "";
+    expect(setCookie).toContain("Path=/");
+  });
+
+  test("admin API rejects request with no cookie (no credentials cross-origin simulation)", async ({ request }) => {
+    // Playwright request fixture sends no cookies unless explicitly set —
+    // this simulates a cross-origin attacker who cannot include the HttpOnly cookie.
+    const response = await request.post("/api/admin/matches", {
+      data: { id: "csrf-test", divisionId: "solar" },
+    });
+    expect(response.status()).toBe(401);
   });
 });

@@ -3,9 +3,10 @@ import { z } from "zod";
 import {
   claimPlayerProfile,
   getPlayerByDiscordId,
+  getPlayerClaimInfo,
   getRegistrationByDiscordId,
 } from "@/lib/league-data";
-import { getAuthUser, getDiscordId } from "@/lib/supabase-auth-server";
+import { getAuthUser, getDiscordId, getDiscordUsername } from "@/lib/supabase-auth-server";
 
 const schema = z.object({ playerId: z.string().min(1) });
 
@@ -24,6 +25,25 @@ export async function POST(request: NextRequest) {
   const alreadyClaimed = await getPlayerByDiscordId(discordId);
   if (alreadyClaimed) {
     return NextResponse.json({ error: "This Discord account is already linked to a player profile." }, { status: 409 });
+  }
+
+  // Verify the target player profile exists and matches the authenticated user's identity
+  const playerInfo = await getPlayerClaimInfo(parsed.data.playerId);
+  if (!playerInfo) {
+    return NextResponse.json({ error: "Player profile not found." }, { status: 404 });
+  }
+  if (playerInfo.profileClaimed && playerInfo.discordId !== discordId) {
+    return NextResponse.json({ error: "This player profile is already claimed by another account." }, { status: 409 });
+  }
+  // Identity check: the player record must have a matching discord username
+  if (playerInfo.discordUsername) {
+    const authUsername = getDiscordUsername(user);
+    if (playerInfo.discordUsername.toLowerCase() !== authUsername.toLowerCase()) {
+      return NextResponse.json(
+        { error: "This player profile does not match your Discord identity. Contact an admin if you believe this is incorrect." },
+        { status: 403 },
+      );
+    }
   }
 
   await claimPlayerProfile(discordId, parsed.data.playerId);

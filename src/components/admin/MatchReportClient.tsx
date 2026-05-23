@@ -212,6 +212,17 @@ export function MatchReportClient({
     setMessage("");
   }
 
+  function toReviewGames(extracted: ExtractedGame[]): ReviewGame[] {
+    return extracted.map((g) => ({
+      gameNumber: g.gameNumber,
+      winningSide: g.winningSide === "away" ? "away" : "home",
+      players: g.players.map((p) => {
+        const matched = data.players.find((pl) => pl.ign.toLowerCase() === p.ign.toLowerCase());
+        return { ...p, playerId: matched?.id };
+      }),
+    }));
+  }
+
   function openExistingReport(report: MatchReportWithMatch) {
     setActiveReportId(report.id);
     const match = data.matches.find((m) => m.id === report.matchId) ?? null;
@@ -221,11 +232,20 @@ export function MatchReportClient({
 
     if (report.status === "done") {
       setStep("done");
-    } else if (report.status === "review" || report.status === "extracting") {
-      setStep("upload");
-    } else {
-      setStep("upload");
+      return;
     }
+
+    if (report.status === "review") {
+      const restoredGames = report.extractedData?.length
+        ? toReviewGames(report.extractedData)
+        : initBlankGamesValue();
+      setGames(restoredGames);
+      setActiveGameIdx(0);
+      setStep("review");
+      return;
+    }
+
+    setStep("upload");
   }
 
   // ── Step 1: Select match and create report ──────────────────────────────────
@@ -294,33 +314,36 @@ export function MatchReportClient({
   // ── Extract ─────────────────────────────────────────────────────────────────
 
   async function handleExtract() {
-    if (!activeReportId || previewFiles.length === 0) return;
+    if (!activeReportId) return;
+    if (previewFiles.length === 0 && uploadedUrls.length === 0) return;
     setBusy(true);
     setMessage("");
 
-    // Upload files first
-    const formData = new FormData();
-    for (const { file } of previewFiles) {
-      try {
-        const resized = await resizeImage(file);
-        formData.append("screenshots", resized, file.name);
-      } catch {
-        formData.append("screenshots", file, file.name);
+    if (previewFiles.length > 0) {
+      // Upload files first
+      const formData = new FormData();
+      for (const { file } of previewFiles) {
+        try {
+          const resized = await resizeImage(file);
+          formData.append("screenshots", resized, file.name);
+        } catch {
+          formData.append("screenshots", file, file.name);
+        }
       }
-    }
 
-    try {
-      const uploadRes = await fetch(`/api/admin/match-reports/${activeReportId}/upload`, {
-        method: "POST",
-        body: formData,
-      });
-      const uploadJson = await uploadRes.json() as { allUrls?: string[]; error?: string };
-      if (!uploadRes.ok) { setMessage(uploadJson.error ?? "Upload failed."); setBusy(false); return; }
-      setUploadedUrls(uploadJson.allUrls ?? []);
-    } catch {
-      setMessage("Upload failed.");
-      setBusy(false);
-      return;
+      try {
+        const uploadRes = await fetch(`/api/admin/match-reports/${activeReportId}/upload`, {
+          method: "POST",
+          body: formData,
+        });
+        const uploadJson = await uploadRes.json() as { allUrls?: string[]; error?: string };
+        if (!uploadRes.ok) { setMessage(uploadJson.error ?? "Upload failed."); setBusy(false); return; }
+        setUploadedUrls(uploadJson.allUrls ?? []);
+      } catch {
+        setMessage("Upload failed.");
+        setBusy(false);
+        return;
+      }
     }
 
     // Trigger AI extraction
@@ -345,16 +368,7 @@ export function MatchReportClient({
       }
 
       const extracted = extractJson.games ?? [];
-      const reviewGames: ReviewGame[] = extracted.map((g) => ({
-        gameNumber: g.gameNumber,
-        winningSide: g.winningSide === "away" ? "away" : "home",
-        players: g.players.map((p) => {
-          const matched = data.players.find(
-            (pl) => pl.ign.toLowerCase() === p.ign.toLowerCase(),
-          );
-          return { ...p, playerId: matched?.id };
-        }),
-      }));
+      const reviewGames = toReviewGames(extracted);
       setGames(reviewGames.length > 0 ? reviewGames : initBlankGamesValue());
       setStep("review");
       setActiveGameIdx(0);

@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { timingSafeEqual } from "crypto";
+import { adminCookie } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Admin Login — SAL" };
@@ -10,7 +14,31 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_state: "Authentication failed. Please try again.",
   token_exchange: "Authentication failed. Please try again.",
   user_fetch: "Authentication failed. Please try again.",
+  invalid_password: "Invalid admin password.",
 };
+
+async function loginWithPassword(formData: FormData) {
+  "use server";
+  const password = formData.get("password");
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (!adminPassword || !password || typeof password !== "string") {
+    redirect("/admin/login?error=invalid_password");
+  }
+
+  const expectedBuf = Buffer.from(adminPassword, "utf8");
+  const actualBuf = Buffer.from(password, "utf8");
+  const valid =
+    expectedBuf.length === actualBuf.length && timingSafeEqual(expectedBuf, actualBuf);
+
+  if (!valid) {
+    redirect("/admin/login?error=invalid_password");
+  }
+
+  const cookie = adminCookie("password-admin", "super_admin");
+  (await cookies()).set(cookie.name, cookie.value, cookie.options);
+  redirect("/admin");
+}
 
 export default async function AdminLoginPage({
   searchParams,
@@ -21,6 +49,7 @@ export default async function AdminLoginPage({
   const errorKey = typeof sp.error === "string" ? sp.error : null;
   const errorMessage = errorKey ? (ERROR_MESSAGES[errorKey] ?? "Authentication failed. Please try again.") : null;
   const oauthConfigured = Boolean(process.env.DISCORD_ADMIN_CLIENT_ID);
+  const passwordConfigured = Boolean(process.env.ADMIN_PASSWORD);
 
   return (
     <main className="grid min-h-screen place-items-center px-4">
@@ -38,7 +67,9 @@ export default async function AdminLoginPage({
             <p className="text-xs font-black uppercase text-emerald-200">SAL Admin</p>
             <h1 className="mt-2 text-2xl font-black text-white">League Control</h1>
             <p className="mt-1 text-sm font-semibold text-slate-400">
-              Sign in with your Discord account to access league management.
+              {oauthConfigured
+                ? "Sign in with your Discord account to access league management."
+                : "Enter your admin password to access league management."}
             </p>
           </div>
 
@@ -58,9 +89,32 @@ export default async function AdminLoginPage({
               </svg>
               Sign in with Discord
             </a>
+          ) : passwordConfigured ? (
+            <form action={loginWithPassword} className="space-y-4">
+              <div className="space-y-1.5">
+                <label htmlFor="password" className="block text-xs font-black uppercase text-slate-400">
+                  Password
+                </label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-cyan-400/40 focus:outline-none focus:ring-1 focus:ring-cyan-400/20"
+                  placeholder="Admin password"
+                />
+              </div>
+              <button
+                type="submit"
+                className="flex w-full items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-sm font-black uppercase text-cyan-100 transition hover:bg-cyan-400/20 active:translate-y-0.5 active:scale-[0.98]"
+              >
+                Enter admin
+              </button>
+            </form>
           ) : (
             <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-center">
-              <p className="text-sm text-slate-500">Discord OAuth is not configured.</p>
+              <p className="text-sm text-slate-500">No login method is configured.</p>
             </div>
           )}
         </div>

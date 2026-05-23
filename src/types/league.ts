@@ -88,6 +88,7 @@ export interface Match {
   archivedAt?: string;
   /** ISO timestamp — set means queued for hard delete by a superadmin. */
   deletionScheduledAt?: string;
+  seasonId?: string;
 }
 
 export interface OrgStanding {
@@ -98,7 +99,7 @@ export interface OrgStanding {
   matchesPlayed: number;
   pointsFor: number;
   pointsAgainst: number;
-  streak: ("W" | "L")[];
+  streak: ("W" | "L" | "D")[];
   gamesBack: number;
 }
 

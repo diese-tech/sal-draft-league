@@ -1,6 +1,6 @@
 import type { DivisionId, LeagueData, OrgStanding } from "@/types/league";
 
-export function recalcStandings(data: Pick<LeagueData, "orgs" | "matches">): OrgStanding[] {
+export function recalcStandings(data: Pick<LeagueData, "orgs" | "matches">, seasonId?: string): OrgStanding[] {
   const map = new Map<string, OrgStanding>();
 
   for (const org of data.orgs) {
@@ -17,7 +17,9 @@ export function recalcStandings(data: Pick<LeagueData, "orgs" | "matches">): Org
     });
   }
 
-  for (const match of data.matches) {
+  const matches = seasonId ? data.matches.filter((m) => m.seasonId === seasonId) : data.matches;
+
+  for (const match of matches) {
     if (match.status !== "completed" || match.homeScore === undefined || match.awayScore === undefined) continue;
     const home = map.get(match.homeOrgId);
     const away = map.get(match.awayOrgId);
@@ -40,6 +42,10 @@ export function recalcStandings(data: Pick<LeagueData, "orgs" | "matches">): Org
       home.losses++;
       away.streak = [...away.streak.slice(-4), "W"];
       home.streak = [...home.streak.slice(-4), "L"];
+    } else {
+      // tied match — record "D" in both streaks; wins/losses stay unchanged
+      home.streak = [...home.streak.slice(-4), "D"];
+      away.streak = [...away.streak.slice(-4), "D"];
     }
   }
 

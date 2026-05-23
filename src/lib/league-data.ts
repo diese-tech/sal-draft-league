@@ -34,7 +34,7 @@ type DbPlayer = Omit<LeaguePlayer, "orgId" | "discordUsername" | "avatarInitials
   deletion_scheduled_at?: string | null;
 };
 
-type DbMatch = Omit<Match, "divisionId" | "homeOrgId" | "awayOrgId" | "scheduledDate" | "scheduledTime" | "homeScore" | "awayScore" | "streamUrl" | "vodUrl" | "archivedAt" | "deletionScheduledAt"> & {
+type DbMatch = Omit<Match, "divisionId" | "homeOrgId" | "awayOrgId" | "scheduledDate" | "scheduledTime" | "homeScore" | "awayScore" | "streamUrl" | "vodUrl" | "archivedAt" | "deletionScheduledAt" | "seasonId"> & {
   division_id: Match["divisionId"];
   home_org_id: string;
   away_org_id: string;
@@ -46,6 +46,7 @@ type DbMatch = Omit<Match, "divisionId" | "homeOrgId" | "awayOrgId" | "scheduled
   vod_url?: string | null;
   archived_at?: string | null;
   deletion_scheduled_at?: string | null;
+  season_id?: string | null;
 };
 
 type DbStanding = Omit<OrgStanding, "orgId" | "divisionId" | "matchesPlayed" | "pointsFor" | "pointsAgainst" | "gamesBack"> & {
@@ -159,6 +160,7 @@ function fromDbMatch(row: DbMatch): Match {
     vodUrl: row.vod_url ?? undefined,
     archivedAt: row.archived_at ?? undefined,
     deletionScheduledAt: row.deletion_scheduled_at ?? undefined,
+    seasonId: row.season_id as string | undefined,
   };
 }
 
@@ -482,7 +484,7 @@ export async function seedLeagueData(data: LeagueData = MOCK_LEAGUE_DATA) {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase env is missing.");
 
-  const standings = recalcStandings(data);
+  const standings = recalcStandings(data, data.season?.id);
   const season = {
     id: data.season.id,
     name: data.season.name,
@@ -608,7 +610,7 @@ export async function recalculateAndPersistStandings() {
   const data = await fetchLeagueData();
   if (data === MOCK_LEAGUE_DATA) throw new Error("Cannot recalculate standings: Supabase data unavailable.");
 
-  const standings = recalcStandings(data);
+  const standings = recalcStandings(data, data.season?.id);
   const { error } = await supabase.from("standings").upsert(standings.map(toDbStanding));
   if (error) throw error;
   const currentOrgIds = standings.map((s) => s.orgId);

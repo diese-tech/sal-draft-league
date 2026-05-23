@@ -124,7 +124,6 @@ describe("recalcStandings()", () => {
   });
 
   describe("tie score (homeScore === awayScore)", () => {
-    // Bug #58: ties are silently ignored — wins/losses stay 0
     it("does not increment wins or losses for either team on a tie", () => {
       const orgs = [makeOrg("home"), makeOrg("away")];
       const matches = [makeMatch("home", "away", 2, 2)];
@@ -133,7 +132,6 @@ describe("recalcStandings()", () => {
       const home = result.find((s) => s.orgId === "home")!;
       const away = result.find((s) => s.orgId === "away")!;
 
-      // Bug #58: ties are silently ignored — wins/losses stay 0
       expect(home.wins).toBe(0);
       expect(home.losses).toBe(0);
       expect(away.wins).toBe(0);
@@ -154,7 +152,7 @@ describe("recalcStandings()", () => {
       expect(home.pointsAgainst).toBe(2);
     });
 
-    it("does not append to streak arrays on a tie", () => {
+    it("appends 'D' to streak arrays on a tie", () => {
       const orgs = [makeOrg("home"), makeOrg("away")];
       const matches = [makeMatch("home", "away", 2, 2)];
       const result = recalcStandings({ orgs, matches });
@@ -162,9 +160,8 @@ describe("recalcStandings()", () => {
       const home = result.find((s) => s.orgId === "home")!;
       const away = result.find((s) => s.orgId === "away")!;
 
-      // Bug #58: ties are silently ignored — streak stays empty
-      expect(home.streak).toEqual([]);
-      expect(away.streak).toEqual([]);
+      expect(home.streak).toEqual(["D"]);
+      expect(away.streak).toEqual(["D"]);
     });
   });
 
@@ -409,6 +406,37 @@ describe("recalcStandings()", () => {
       expect(lunarA.gamesBack).toBe(0);
       // lunarB: 0W 1L; gamesBack = (1 - (-1)) / 2 = 1
       expect(lunarB.gamesBack).toBe(1);
+    });
+  });
+
+  describe("season filter (P0-06)", () => {
+    it("includes all matches when no seasonId is passed", () => {
+      const orgs = [makeOrg("a"), makeOrg("b")];
+      const m1 = { ...makeMatch("a", "b", 3, 1), seasonId: "s1" };
+      const m2 = { ...makeMatch("b", "a", 3, 1), seasonId: "s2" };
+      const result = recalcStandings({ orgs, matches: [m1, m2] });
+      const a = result.find((s) => s.orgId === "a")!;
+      expect(a.wins).toBe(1);
+      expect(a.losses).toBe(1);
+    });
+
+    it("filters to only the specified season", () => {
+      const orgs = [makeOrg("a"), makeOrg("b")];
+      const m1 = { ...makeMatch("a", "b", 3, 1), seasonId: "s1" };
+      const m2 = { ...makeMatch("b", "a", 3, 1), seasonId: "s2" };
+      const result = recalcStandings({ orgs, matches: [m1, m2] }, "s1");
+      const a = result.find((s) => s.orgId === "a")!;
+      expect(a.wins).toBe(1);
+      expect(a.losses).toBe(0);
+    });
+
+    it("returns zeroed standings when no matches match the seasonId", () => {
+      const orgs = [makeOrg("a"), makeOrg("b")];
+      const m1 = { ...makeMatch("a", "b", 3, 1), seasonId: "s1" };
+      const result = recalcStandings({ orgs, matches: [m1] }, "s2");
+      const a = result.find((s) => s.orgId === "a")!;
+      expect(a.wins).toBe(0);
+      expect(a.matchesPlayed).toBe(0);
     });
   });
 

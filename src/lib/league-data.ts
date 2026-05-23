@@ -758,6 +758,26 @@ export async function claimPlayerProfile(discordId: string, playerId: string): P
   await writeAuditLog("claim_player_profile", "player", playerId, { discordId });
 }
 
+export async function getPlayerClaimInfo(playerId: string): Promise<{
+  discordUsername: string;
+  discordId: string | null;
+  profileClaimed: boolean;
+} | null> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("players")
+    .select("discord_username, discord_id, profile_claimed")
+    .eq("id", playerId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    discordUsername: data.discord_username as string,
+    discordId: (data.discord_id as string | null) ?? null,
+    profileClaimed: (data.profile_claimed as boolean) ?? false,
+  };
+}
+
 export async function getPlayerByDiscordId(discordId: string): Promise<LeaguePlayer | null> {
   const supabase = getSupabaseServerClient();
   if (!supabase) return null;

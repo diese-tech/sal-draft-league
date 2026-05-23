@@ -20,7 +20,7 @@ export function recalcStandings(data: Pick<LeagueData, "orgs" | "matches">, seas
   const matches = seasonId ? data.matches.filter((m) => m.seasonId === seasonId) : data.matches;
 
   for (const match of matches) {
-    if (match.status !== "completed" || match.homeScore === undefined || match.awayScore === undefined) continue;
+    if ((match.status !== "completed" && match.status !== "forfeit") || match.homeScore === undefined || match.awayScore === undefined) continue;
     const home = map.get(match.homeOrgId);
     const away = map.get(match.awayOrgId);
     if (!home || !away) continue;

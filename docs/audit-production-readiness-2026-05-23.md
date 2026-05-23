@@ -7,7 +7,7 @@
 
 ## Implementation Progress
 
-**Last updated:** 2026-05-23 — batches 1–5 merged into `main` via PRs #94–#97 and #98.
+**Last updated:** 2026-05-23 — batches 1–7 merged into `main` via PRs #94–#100.
 
 ### Resolved items
 
@@ -29,6 +29,21 @@
 | P2-16 | `npm run lint` runs in CI | #94 | `continue-on-error: true` due to 45 pre-existing errors on `main`; tracked in audit backlog. |
 | P2-19 | `/api/health` endpoint added | #97 | Returns `{ status: "ok", timestamp }`. |
 | P2-20 | `robots.txt` and `sitemap.xml` added | #97 | Sitemap covers `/`, `/standings`, `/schedule`, `/teams`. Admin area disallowed. |
+| P0-02 | `makeAdminSession` logs a console warning in production when `ADMIN_SESSION_SECRET` is absent | #100 | Warning alerts operators to set the env var; does not block operation but surfaces misconfiguration. |
+| P0-04 | Player claim now verifies Discord username matches player record before allowing the claim | #100 | Returns 403 if username mismatch; 409 if profile already claimed by different Discord ID. |
+| P0-05 | Tied matches now recorded as draws ("D") in both teams' streaks; neither team gains a win or loss | #99 | `recalcStandings()` third branch handles `homeScore === awayScore`. `StreakDots` renders "D" as a yellow dot. |
+| P0-06 | `recalcStandings()` accepts a `seasonId` parameter and filters matches internally | #99 | `recalculateAndPersistStandings()` passes the active season ID. Cross-season contamination eliminated. |
+| P0-07 | Season PATCH now enforces valid status transitions and blocks a second active season (409) | #100 | `VALID_TRANSITIONS` map enforces pre-season→active→post-season→offseason path. Season POST also blocks two active seasons. |
+| P1-02 | Captain tokens are now consumed (deleted) on first exchange — one-time use only | #99 | `consumeCaptainToken()` verifies then deletes the token hash from `captain_tokens`. |
+| P1-08 | IGN uniqueness constraint added at DB level (`idx_players_ign_unique` partial index) | #99 | Migration `012_uniqueness_constraints.sql`. Also adds `idx_orgs_name_unique` and `idx_orgs_tag_unique`. |
+| P1-17 | `rate-limit.ts` unit tests added (13 tests) | #99 | `src/lib/rate-limit.test.ts` — covers allow/block thresholds, window reset with fake timers, per-key isolation, `clearRateLimit`. |
+| P2-04 | Forfeit match status added to types, standings engine, and MatchCard UI | #100 | `MatchStatus` now includes `"forfeit"`; standings counts forfeits as W/L; MatchCard shows red "Forfeit" badge. |
+| P2-05 | Org name and tag uniqueness enforced at DB level | #99 | Same migration as P1-08: `idx_orgs_name_unique`, `idx_orgs_tag_unique`. |
+| P2-07 | Match `scheduledDate` rejects dates more than 1 day in the past | #99 | `superRefine` in `POST /api/admin/matches` validates date for `status="scheduled"`. |
+| P2-08 | Season status transitions guarded in PATCH handler | #100 | Same as P0-07 — `VALID_TRANSITIONS` guard. |
+| P2-11 | Draft room creation blocks a second active/pending room for the same division | #99 | `POST /api/admin/draft` returns 409 if conflicting room exists. |
+| P2-12 | `baseOrder` validation verifies each org ID belongs to the correct draft division | #99 | `POST /api/admin/draft/[id]/start` validates org IDs against division membership; returns 400 with invalid IDs listed. |
+| P2-17 | Lighthouse thresholds changed from `warn` to `error` | #99 | `.lighthouserc.json` — performance/accessibility/SEO regressions now block merge. |
 
 ### Confirmed-safe items (audited, no code change needed)
 
@@ -41,7 +56,7 @@
 ### Still open
 
 All items not listed above remain open. Priority order for next work:  
-P0-04 → P0-05/P0-06 (tied matches + season filter in standings) → P0-07 → P0-08 → P1-17 (rate-limit unit tests) → P1-02 → P1-05/P1-06/P1-07 (atomicity) → P1-19 (error monitoring).
+P0-08 (draft undo atomicity) → P0-09/P0-10 (draft→roster / registration→player stubs) → P1-05/P1-06/P1-07 (pick race / standings atomic / match-report race) → P1-09 (standings caching) → P1-10/P1-11/P1-12 (product stubs) → P1-19 (error monitoring/Sentry) → P2-10 (historical season browsing) → P2-13 (idempotency keys) → P2-18 (per-instance rate limiter).
 
 ---
 
@@ -64,12 +79,12 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 | # | Area | Issue | File(s) |
 |---|------|-------|---------|
 | ~~P0-01~~ | ~~Security~~ | ~~Captain session cookie is unsigned plain text — any party who knows `draftRoomId` and `orgId` can set the cookie and submit picks as that captain~~ | ~~`src/lib/captain-auth.ts:13-22`~~ |
-| P0-02 | Security | Admin session secret falls back to `ADMIN_PASSWORD`; low-entropy password → forgeable HMAC sessions | `src/lib/admin-auth.ts:9-13` |
+| ~~P0-02~~ | ~~Security~~ | ~~Admin session secret falls back to `ADMIN_PASSWORD`; low-entropy password → forgeable HMAC sessions~~ **Partially mitigated:** production warning added; `ADMIN_SESSION_SECRET` must still be set explicitly | ~~`src/lib/admin-auth.ts:9-13`~~ |
 | P0-03 | Security | ~~Rate-limit module is fully implemented but never imported anywhere; all registration, claim, and OAuth endpoints are unprotected from brute-force~~ **Partially fixed:** admin login rate-limited; claim and register endpoints still unprotected | `src/lib/rate-limit.ts` |
-| P0-04 | Security | Player claim endpoint has no identity verification; any authenticated Discord user can claim any player profile by sending a different `playerId` | `src/app/api/auth/claim/route.ts` |
-| P0-05 | Data | Standings: tied matches (equal scores) are silently skipped — no point, no draw record; standings are incorrect for any season with ties | `src/lib/standings.ts:33-43` |
-| P0-06 | Data | `recalcStandings()` has no season filter; if the caller passes all-time matches, every season's data corrupts the current standings | `src/lib/standings.ts:3-56` |
-| P0-07 | Data | No database UNIQUE constraint or application guard prevents two active seasons simultaneously; public pages pick "latest" with undefined behavior | `src/lib/league-data.ts:347-360` |
+| ~~P0-04~~ | ~~Security~~ | ~~Player claim endpoint has no identity verification; any authenticated Discord user can claim any player profile by sending a different `playerId`~~ | ~~`src/app/api/auth/claim/route.ts`~~ |
+| ~~P0-05~~ | ~~Data~~ | ~~Standings: tied matches (equal scores) are silently skipped — no point, no draw record; standings are incorrect for any season with ties~~ | ~~`src/lib/standings.ts:33-43`~~ |
+| ~~P0-06~~ | ~~Data~~ | ~~`recalcStandings()` has no season filter; if the caller passes all-time matches, every season's data corrupts the current standings~~ | ~~`src/lib/standings.ts:3-56`~~ |
+| ~~P0-07~~ | ~~Data~~ | ~~No database UNIQUE constraint or application guard prevents two active seasons simultaneously; public pages pick "latest" with undefined behavior~~ | ~~`src/lib/league-data.ts:347-360`~~ |
 | P0-08 | Data | Draft undo (`undoLastPick`) is non-atomic: deletes last pick then updates room index in separate queries; a concurrent pick between those two writes corrupts draft state | `src/lib/draft-data.ts:325-353` |
 | P0-09 | Product | Draft completion does not propagate picks to team rosters; admin must manually re-enter every pick into the player assignment screen | `src/lib/draft-data.ts`, `AdminDraftRoomClient.tsx` |
 | P0-10 | Product | Registration approval does not create a player record; approved registrations are informational only | `src/components/admin/AdminRegistrationsClient.tsx` |
@@ -81,13 +96,13 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 | # | Area | Issue | File(s) |
 |---|------|-------|---------|
 | ~~P1-01~~ | ~~Security~~ | ~~XSS: `MarkdownBody.tsx` renders `href` from Markdown links without validation; `javascript:alert(1)` in any announcement executes on click~~ | ~~`src/components/ui/MarkdownBody.tsx:31`~~ |
-| P1-02 | Security | Captain tokens are not invalidated after the first exchange; a leaked token remains valid for 30 days | `src/lib/draft-data.ts:192-204` |
+| ~~P1-02~~ | ~~Security~~ | ~~Captain tokens are not invalidated after the first exchange; a leaked token remains valid for 30 days~~ | ~~`src/lib/draft-data.ts:192-204`~~ |
 | P1-03 | Security | `sameSite="lax"` on both admin and captain cookies; cross-site POST form submissions can carry the cookie | `src/lib/admin-auth.ts:89`, `captain-auth.ts:17` |
 | ~~P1-04~~ | ~~Security~~ | ~~Middleware does not check admin session; `/admin/*` protection relies entirely on per-page `requireAdmin()` calls — a missed call in any future page leaves it open~~ | ~~`src/middleware.ts`~~ |
 | P1-05 | Data | Simultaneous pick submission race: two picks arriving for the same slot both read the same `currentPickIndex`, both pass turn validation, both call `recordPick()` before the index increments | `src/app/api/draft/[id]/pick/route.ts:62-74` |
 | P1-06 | Data | Standings recalculation is non-atomic: upserts new standings then deletes orphans in separate queries; concurrent reads see mixed old/new data | `src/lib/league-data.ts:597-620` |
 | P1-07 | Data | Match report concurrent submission: second admin's DELETE wipes first admin's inserts before second admin's INSERT completes | `src/app/api/admin/match-reports/[id]/submit/route.ts:105-117` |
-| P1-08 | Data | No IGN uniqueness constraint at DB level; duplicate IGNs can be created via upsert with different player IDs | `src/lib/league-data.ts:569` |
+| ~~P1-08~~ | ~~Data~~ | ~~No IGN uniqueness constraint at DB level; duplicate IGNs can be created via upsert with different player IDs~~ | ~~`src/lib/league-data.ts:569`~~ |
 | P1-09 | Data | Standings `recalculateAndPersistStandings()` re-queries all matches and orgs every call with no caching; hot under admin load | `src/lib/league-data.ts:597` |
 | P1-10 | Product | Admin Import page is a stub; bulk player import is non-functional | `src/app/admin/import/page.tsx` |
 | P1-11 | Product | Admin Match Report AI extraction is a placeholder; the entire OCR/result pipeline is non-functional | `src/app/api/admin/match-reports/[id]/extract/route.ts` |
@@ -96,7 +111,7 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 | ~~P1-14~~ | ~~Env~~ | ~~`NEXT_PUBLIC_SUPABASE_ANON_KEY` is documented in `DEVELOPMENT.md` but absent from `.env.example`; app fails silently without it~~ | ~~`.env.example`~~ |
 | ~~P1-15~~ | ~~Tests~~ | ~~`standings.ts` has zero unit tests; the most complex calculation in the product is unverified~~ | ~~(no file)~~ |
 | ~~P1-16~~ | ~~Tests~~ | ~~`captain-auth.ts` has zero unit tests; unsigned cookie parsing and token exchange logic are unverified~~ | ~~(no file)~~ |
-| P1-17 | Tests | `rate-limit.ts` has zero unit tests | (no file) |
+| ~~P1-17~~ | ~~Tests~~ | ~~`rate-limit.ts` has zero unit tests~~ | ~~`src/lib/rate-limit.test.ts` added — 13 tests~~ |
 | ~~P1-18~~ | ~~Tests~~ | ~~No integration tests exercise RLS policies; unauthenticated access to sensitive tables is untested~~ | ~~`tests/integration/rls.test.ts` added — requires Supabase allowlist config for CI~~ |
 | P1-19 | Ops | No error monitoring (Sentry or equivalent); draft pick failures, standings errors, and auth rejections are silent in production | (no file) |
 
@@ -107,20 +122,20 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 | ~~P2-01~~ | ~~Security~~ | ~~Discord OAuth state comparison uses `===` instead of `timingSafeEqual`~~ | ~~`src/app/api/admin/discord/callback/route.ts:31`~~ |
 | ~~P2-02~~ | ~~Security~~ | ~~`admin_users` table RLS status is not confirmed in migrations; could expose admin Discord IDs to unauthenticated SELECT~~ | ~~Confirmed: RLS enabled in `005_admin_users.sql`, no SELECT policy — default-deny is in effect~~ |
 | ~~P2-03~~ | ~~Security~~ | ~~`captain_shortlists` and `captain_tokens` tables have RLS enabled but no explicit policy defined; depend on fragile default-deny~~ | ~~Confirmed: both tables have RLS enabled with no permissive policies — integration tests verify zero rows returned~~ |
-| P2-04 | Data | No forfeit match status; standings treats all losses equally | `src/types/league.ts:74-91`, `src/lib/standings.ts` |
-| P2-05 | Data | Org name and tag uniqueness not enforced at DB level | `src/lib/league-data.ts:375-381` |
+| ~~P2-04~~ | ~~Data~~ | ~~No forfeit match status; standings treats all losses equally~~ | ~~`src/types/league.ts`, `src/lib/standings.ts`, `MatchCard.tsx` updated~~ |
+| ~~P2-05~~ | ~~Data~~ | ~~Org name and tag uniqueness not enforced at DB level~~ | ~~`supabase/migrations/012_uniqueness_constraints.sql`~~ |
 | P2-06 | Data | Player import is not transactional; partial failure leaves partially-inserted data with no rollback | `src/app/api/admin/import/players/route.ts:44-59` |
-| P2-07 | Data | Match `scheduledDate` field accepts past dates without validation | `src/app/api/admin/matches/route.ts:12` |
-| P2-08 | Data | Season status transitions are not guarded; can jump from `pre-season` to `offseason` directly | `src/app/admin/seasons/page.tsx` |
-| P2-09 | Data | `Match` type has no `seasonId`; matches are tied to `divisionId` only, making multi-season standings isolation the caller's responsibility | `src/types/league.ts` |
+| ~~P2-07~~ | ~~Data~~ | ~~Match `scheduledDate` field accepts past dates without validation~~ | ~~`src/app/api/admin/matches/route.ts` — rejects dates > 1 day in the past~~ |
+| ~~P2-08~~ | ~~Data~~ | ~~Season status transitions are not guarded; can jump from `pre-season` to `offseason` directly~~ | ~~`src/app/api/admin/seasons/[id]/route.ts` — `VALID_TRANSITIONS` guard~~ |
+| ~~P2-09~~ | ~~Data~~ | ~~`Match` type has no `seasonId`; matches are tied to `divisionId` only, making multi-season standings isolation the caller's responsibility~~ | ~~`src/types/league.ts` — `seasonId?: string` added to `Match`; `recalcStandings()` filters by it~~ |
 | P2-10 | Product | Historical season browsing is not supported on any public page | `src/lib/league-data.ts:221-268` |
-| P2-11 | Product | No guard preventing creation of two concurrent draft rooms for the same division | `src/app/api/admin/draft/route.ts` |
-| P2-12 | Product | `baseOrder` validation does not verify that listed org IDs are real or belong to the correct division | `src/app/api/admin/draft/[id]/start/route.ts` |
+| ~~P2-11~~ | ~~Product~~ | ~~No guard preventing creation of two concurrent draft rooms for the same division~~ | ~~`POST /api/admin/draft` returns 409 when active/pending room exists for same division~~ |
+| ~~P2-12~~ | ~~Product~~ | ~~`baseOrder` validation does not verify that listed org IDs are real or belong to the correct division~~ | ~~`POST /api/admin/draft/[id]/start` validates org IDs against division membership~~ |
 | P2-13 | Product | Draft picks (undo double-call) and player claim (concurrent requests) lack idempotency keys | Multiple routes |
 | P2-14 | Product | No duplicate registration prevention; user can submit the registration form twice | `src/components/auth/RegisterClient.tsx` |
 | ~~P2-15~~ | ~~CI~~ | ~~TypeScript type-check (`tsc --noEmit`) not in CI~~ | ~~`.github/workflows/lighthouse.yml`~~ |
 | ~~P2-16~~ | ~~CI~~ | ~~ESLint not in CI~~ | ~~`.github/workflows/lighthouse.yml`~~ |
-| P2-17 | CI | Lighthouse thresholds set to `warn`; PRs can merge at sub-70 performance score | `.lighthouserc.json` |
+| ~~P2-17~~ | ~~CI~~ | ~~Lighthouse thresholds set to `warn`; PRs can merge at sub-70 performance score~~ | ~~`.lighthouserc.json` — all thresholds changed to `error`~~ |
 | P2-18 | Ops | In-memory rate limiter is per-Vercel-instance; cross-instance brute force is not throttled | `src/lib/rate-limit.ts` |
 | ~~P2-19~~ | ~~Ops~~ | ~~No `/api/health` endpoint for uptime monitoring~~ | ~~`src/app/api/health/route.ts` added~~ |
 | ~~P2-20~~ | ~~Ops~~ | ~~No `robots.txt` or `sitemap.xml`~~ | ~~`public/robots.txt` and `src/app/sitemap.ts` added~~ |
@@ -132,11 +147,11 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 | ID | Severity | Vulnerability | Exploit Scenario | File / Line |
 |----|----------|---------------|------------------|-------------|
 | ~~SEC-01~~ | ~~**CRITICAL**~~ | ~~Unsigned captain session cookie~~ | ~~Attacker sets `sal_captain_session=<draftRoomId>:<orgId>` in DevTools and submits picks as any captain~~ | ~~**Fixed:** cookie is now HMAC-SHA256 signed; forgery detected and rejected~~ |
-| SEC-02 | **CRITICAL** | Admin session HMAC key falls back to `ADMIN_PASSWORD` | Attacker captures session cookie, brute-forces HMAC with common passwords, forges superadmin session | `admin-auth.ts:9-13` |
+| SEC-02 | **HIGH** (was CRITICAL) | Admin session HMAC key falls back to `ADMIN_PASSWORD` | Attacker captures session cookie, brute-forces HMAC with common passwords, forges superadmin session | `admin-auth.ts` — **Partially mitigated:** production warning added; `ADMIN_SESSION_SECRET` must still be set in env |
 | SEC-03 | **HIGH** (was CRITICAL) | Rate limiter applied to admin login; claim and register endpoints still unprotected | Unlimited brute-force against `/api/auth/claim` or `/api/auth/register` | `rate-limit.ts` — partially deployed |
-| SEC-04 | **CRITICAL** | Player claim — no identity verification | Alice calls `POST /api/auth/claim` with Bob's `playerId`; overwrites Bob's `discord_id` with Alice's | `api/auth/claim/route.ts` |
+| ~~SEC-04~~ | ~~**CRITICAL**~~ | ~~Player claim — no identity verification~~ | ~~Alice calls `POST /api/auth/claim` with Bob's `playerId`; overwrites Bob's `discord_id` with Alice's~~ | ~~**Fixed:** Discord username verified against player record before claim allowed~~ |
 | ~~SEC-05~~ | ~~**HIGH**~~ | ~~XSS via Markdown `href`~~ | ~~Admin publishes `[Click here](javascript:alert(document.cookie))`; all visitors who click execute attacker JS~~ | ~~**Fixed:** `MarkdownBody.tsx` now sanitizes `javascript:` hrefs to `#`~~ |
-| SEC-06 | **HIGH** | Captain token reusable for 30 days | Token leaked via Discord DM; adversary exchanges it repeatedly to hijack captain session | `draft-data.ts:192-204` |
+| ~~SEC-06~~ | ~~**HIGH**~~ | ~~Captain token reusable for 30 days~~ | ~~Token leaked via Discord DM; adversary exchanges it repeatedly to hijack captain session~~ | ~~**Fixed:** `consumeCaptainToken()` deletes token hash on first exchange — one-time use~~ |
 | SEC-07 | **HIGH** | No CSRF protection beyond `sameSite=lax` | Attacker hosts form on `evil.com` that auto-submits POST to `/api/admin/matches` while admin is logged in | `admin-auth.ts:89`, `captain-auth.ts:17` |
 | ~~SEC-08~~ | ~~**HIGH**~~ | ~~Admin route protection only at handler level~~ | ~~A new admin page that forgets `await requireAdmin()` is immediately accessible to unauthenticated users~~ | ~~**Fixed:** middleware now gates all `/admin/*` routes before handler runs~~ |
 | ~~SEC-09~~ | ~~**MEDIUM**~~ | ~~`captain_shortlists`/`captain_tokens` have no explicit RLS policy~~ | ~~A future migration that grants a SELECT policy exposes one captain's shortlist to another~~ | ~~**Confirmed safe:** both tables are default-deny; integration tests verify zero anon rows~~ |
@@ -150,19 +165,19 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 
 | Scenario | Current Behavior | Expected Behavior | Severity |
 |----------|-----------------|-------------------|----------|
-| Match ends in a tie (equal scores) | Silently skipped; neither team's record updated | Award draw; both streaks updated | CRITICAL |
-| Two seasons set to `active` simultaneously | Undefined; public pages use `LIMIT 1` whichever is "latest" | DB UNIQUE constraint; admin UI prevents second activation | CRITICAL |
-| Standings called with mixed-season matches | Cross-season data corrupts standings | Caller enforces season filter, or function filters internally | CRITICAL |
+| ~~Match ends in a tie (equal scores)~~ | ~~Silently skipped; neither team's record updated~~ | ~~Award draw; both streaks updated~~ | ~~CRITICAL~~ — **Fixed:** draw recorded as "D" in both streak arrays |
+| ~~Two seasons set to `active` simultaneously~~ | ~~Undefined; public pages use `LIMIT 1` whichever is "latest"~~ | ~~DB UNIQUE constraint; admin UI prevents second activation~~ | ~~CRITICAL~~ — **Fixed:** PATCH and POST season handlers return 409 if another season is already active |
+| ~~Standings called with mixed-season matches~~ | ~~Cross-season data corrupts standings~~ | ~~Caller enforces season filter, or function filters internally~~ | ~~CRITICAL~~ — **Fixed:** `recalcStandings()` accepts `seasonId` parameter and filters internally |
 | Captain and admin both call undo simultaneously | Race; pick may be double-deleted or re-inserted with wrong index | DB transaction wrapping delete + index update | CRITICAL |
 | Two captains submit a pick at the same slot | Both pass turn check; race on `currentPickIndex` increment | Serializable isolation on pick insert; second request gets conflict error | CRITICAL |
 | User submits registration form twice (double-click) | Two pending registrations created | Idempotency key or duplicate check on `discord_id` before insert | HIGH |
-| Admin claims another player's profile | Overwrites existing `discord_id` without warning | Check `profile_claimed` flag; reject if already claimed | HIGH |
+| ~~Admin claims another player's profile~~ | ~~Overwrites existing `discord_id` without warning~~ | ~~Check `profile_claimed` flag; reject if already claimed~~ | ~~HIGH~~ — **Fixed:** claim route now verifies Discord username and rejects if profile already claimed by different account |
 | CSV import row fails midway | Rows 1…N-1 committed; no rollback | Wrap import in DB transaction; rollback all on any row failure | HIGH |
 | Draft `undo` called twice rapidly | May delete wrong picks due to race | Optimistic lock (version field) on `draft_rooms`; reject stale undo | HIGH |
 | Season closed while draft is active | Draft continues; season state inconsistent | Guard season close behind draft-complete check | HIGH |
 | No active season exists | Public pages silently serve mock data | Explicit empty-state message; mock data only in `NODE_ENV=development` | MEDIUM |
-| Draft started with orgs not in the division | Draft proceeds with invalid org IDs | Validate `baseOrder` org IDs against division membership | MEDIUM |
-| Match rescheduled to past date | Accepted silently | Warn admin; require explicit override | MEDIUM |
+| ~~Draft started with orgs not in the division~~ | ~~Draft proceeds with invalid org IDs~~ | ~~Validate `baseOrder` org IDs against division membership~~ | ~~MEDIUM~~ — **Fixed:** start route validates org IDs against division |
+| ~~Match rescheduled to past date~~ | ~~Accepted silently~~ | ~~Warn admin; require explicit override~~ | ~~MEDIUM~~ — **Fixed:** `scheduledDate` > 1 day in past rejected with 400 |
 | Org archived mid-season | Players and matches remain; standings may include archived org | Guard archive behind match-complete check or show warning | MEDIUM |
 | `gamesBack` calculation on empty division | Empty array; arithmetic skipped silently | Return explicit 0 for all teams; log warning | LOW |
 | Import CSV with duplicate IGN across rows | Last row wins; no error reported | Report per-row conflict; reject duplicates | MEDIUM |
@@ -243,11 +258,11 @@ See the GitHub Issues tab for the full list of 29 concrete issues derived from t
 
 | Script | Command | Runs in CI? |
 |--------|---------|-------------|
-| `test` | `vitest run` | ❌ No |
+| `test` | `vitest run` | ✅ Yes (`ci.yml` — unit-tests job) |
 | `test:load` | `vitest run tests/load` | ❌ No |
-| `test:e2e` | `playwright test` | ❌ No |
-| `lint` | `eslint` | ❌ No |
-| `build` | `next build` | ✅ Yes (lighthouse.yml) |
+| `test:e2e` | `playwright test` | ✅ Yes (`ci.yml` — e2e-tests job) |
+| `lint` | `eslint` | ✅ Yes (`ci.yml` — lint-and-typecheck job, `continue-on-error: true`) |
+| `build` | `next build` | ✅ Yes (both `lighthouse.yml` and `ci.yml`) |
 
 **CI pipeline** (`.github/workflows/lighthouse.yml`): runs `npm run build` then `npx lhci autorun`. No test step of any kind. Zero test failures can block a merge.
 
@@ -415,13 +430,13 @@ All items in this section are **entirely absent** — there are no integration t
 
 | Check | Current status | Gap | Severity |
 |-------|---------------|-----|----------|
-| Lint (`npm run lint`) | ❌ Not in CI | Add as required check | P1 |
-| Build (`npm run build`) | ✅ Runs in `lighthouse.yml` | — |
-| TypeScript (`tsc --noEmit`) | ❌ Not in CI | Add as required check | P1 |
-| Unit tests (`npm run test`) | ❌ Not in CI | Add as required check; failures block merge | P0 |
-| E2E tests (`npm run test:e2e`) | ❌ Not in CI | Add as required check; requires test Supabase project | P0 |
+| ~~Lint (`npm run lint`)~~ | ~~❌ Not in CI~~ | ~~Add as required check~~ | ~~P1~~ — ✅ **Added** (`ci.yml` lint-and-typecheck job; `continue-on-error: true` for pre-existing errors) |
+| Build (`npm run build`) | ✅ Runs in `lighthouse.yml` and `ci.yml` | — |
+| ~~TypeScript (`tsc --noEmit`)~~ | ~~❌ Not in CI~~ | ~~Add as required check~~ | ~~P1~~ — ✅ **Added** (`ci.yml` lint-and-typecheck job) |
+| ~~Unit tests (`npm run test`)~~ | ~~❌ Not in CI~~ | ~~Add as required check; failures block merge~~ | ~~P0~~ — ✅ **Added** (`ci.yml` unit-tests job) |
+| ~~E2E tests (`npm run test:e2e`)~~ | ~~❌ Not in CI~~ | ~~Add as required check; requires test Supabase project~~ | ~~P0~~ — ✅ **Added** (`ci.yml` e2e-tests job) |
 | Load tests (`npm run test:load`) | ❌ Not in CI | Add as optional gate (warn on regression) | P2 |
-| Lighthouse (perf/a11y/SEO) | ✅ Runs and reports | Thresholds are `warn` only; sub-70 perf does not block merge | P2 |
+| ~~Lighthouse (perf/a11y/SEO)~~ | ~~✅ Runs and reports~~ | ~~Thresholds are `warn` only; sub-70 perf does not block merge~~ | ~~P2~~ — ✅ **Fixed** (`.lighthouserc.json` thresholds changed to `error`) |
 | Branch protection rules | ❌ Unknown; no required status checks visible | Enable branch protection on `main`; require all CI checks | P0 |
 
 **Minimum release gate (must all be green before any production deploy):**
@@ -449,15 +464,15 @@ npx lhci autorun       # with error-level thresholds
 | Login rate limiting | 🟡 Yellow | `site.spec.ts:449` proves mechanism; not a real distributed test |
 | Draft load / concurrent spectators | 🟡 Yellow | In-process simulation; no real DB or network |
 | Admin import (CSV) | 🟡 Yellow | Preview and batch send tested; rollback, deduplication, and large-import untested |
-| Standings calculation | 🔴 Red | Zero unit tests; correctness unverified for ties, streaks, games-back, season isolation |
-| Captain token exchange | 🔴 Red | No test at any level for `verifyCaptainToken()`, token expiry, or session cookie validation |
+| Standings calculation | 🟡 Yellow | Unit tests added for W/L, ties, draws, streaks, games-back, season isolation, forfeits; integration test (score correction → standings) still missing |
+| Captain token exchange | 🟡 Yellow | 14 unit tests cover sign/verify/tamper/one-time-use; no E2E against real draft room |
 | Admin session HMAC (tamper / expiry) | 🔴 Red | Crypto path in `admin-auth.ts:30-50` is completely untested |
 | RLS policies | 🔴 Red | No integration tests against a real Supabase instance |
 | Registration workflow (full flow) | 🔴 Red | Pre-auth redirect tested; post-OAuth form submit, duplicate prevention, and claim flow untested |
 | Superadmin vs regular admin distinction | 🔴 Red | Role separation in API routes is untested |
 | CSRF / cross-origin protection | 🔴 Red | No test verifies cross-site request behavior |
 | XSS via Markdown href | 🔴 Red | No test asserts `javascript:` links are blocked |
-| Season filter isolation in standings | 🔴 Red | `recalcStandings()` has no season parameter; cross-season contamination is untested |
+| Season filter isolation in standings | 🟢 Green | `recalcStandings()` now accepts `seasonId`; 3 unit tests verify cross-season isolation |
 | CI gates | 🔴 Red | Only Lighthouse runs; unit and E2E tests not in CI pipeline |
 
 ---

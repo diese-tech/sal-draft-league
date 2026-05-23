@@ -28,6 +28,18 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    if (result.data.status === "active") {
+      const { getAllSeasons } = await import("@/lib/league-data");
+      const allSeasons = await getAllSeasons();
+      const alreadyActive = allSeasons.find((s) => s.status === "active");
+      if (alreadyActive) {
+        return NextResponse.json(
+          { error: `Season "${alreadyActive.name}" is already active. Deactivate it before creating another active season.` },
+          { status: 409 },
+        );
+      }
+    }
+
     await saveSeason(result.data);
     revalidateTag("league-data", {});
     return NextResponse.json({ ok: true });

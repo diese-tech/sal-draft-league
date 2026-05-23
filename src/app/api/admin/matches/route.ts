@@ -11,7 +11,7 @@ const matchSchema = z.object({
   awayOrgId: z.string().min(1),
   scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "scheduledDate must be YYYY-MM-DD"),
   scheduledTime: z.string().regex(/^\d{2}:\d{2}$/, "scheduledTime must be HH:MM"),
-  status: z.enum(["scheduled", "live", "completed", "postponed"]),
+  status: z.enum(["scheduled", "live", "completed", "postponed", "forfeit"]),
   week: z.number().int().min(1),
   homeScore: z.number().int().min(0).optional(),
   awayScore: z.number().int().min(0).optional(),
@@ -21,10 +21,10 @@ const matchSchema = z.object({
   if (val.homeOrgId === val.awayOrgId) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "homeOrgId and awayOrgId must differ", path: ["awayOrgId"] });
   }
-  if (val.status === "completed" && (val.homeScore === undefined || val.awayScore === undefined)) {
+  if ((val.status === "completed" || val.status === "forfeit") && (val.homeScore === undefined || val.awayScore === undefined)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "homeScore and awayScore are required when status is completed", path: ["homeScore"] });
   }
-  if (val.status !== "completed" && (val.homeScore !== undefined || val.awayScore !== undefined)) {
+  if (val.status !== "completed" && val.status !== "forfeit" && (val.homeScore !== undefined || val.awayScore !== undefined)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "scores may only be set when status is completed", path: ["homeScore"] });
   }
   if (val.status === "scheduled") {

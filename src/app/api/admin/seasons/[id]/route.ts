@@ -38,6 +38,33 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const seasons = await getAllSeasons();
       const existing = seasons.find((s) => s.id === id);
       if (!existing) return NextResponse.json({ error: "Season not found." }, { status: 404 });
+
+      if (patch.status !== undefined && patch.status !== existing.status) {
+        const VALID_TRANSITIONS: Record<string, string[]> = {
+          "pre-season": ["active"],
+          "active": ["post-season", "offseason"],
+          "post-season": ["offseason"],
+          "offseason": ["pre-season"],
+        };
+        const allowed = VALID_TRANSITIONS[existing.status] ?? [];
+        if (!allowed.includes(patch.status)) {
+          return NextResponse.json(
+            { error: `Cannot transition season from "${existing.status}" to "${patch.status}". Allowed: ${allowed.join(", ") || "none"}.` },
+            { status: 400 },
+          );
+        }
+      }
+
+      if (patch.status === "active") {
+        const alreadyActive = seasons.find((s) => s.status === "active" && s.id !== id);
+        if (alreadyActive) {
+          return NextResponse.json(
+            { error: `Season "${alreadyActive.name}" is already active. Deactivate it before activating another.` },
+            { status: 409 },
+          );
+        }
+      }
+
       await saveSeason({
         ...existing,
         ...(patch.status !== undefined && { status: patch.status }),

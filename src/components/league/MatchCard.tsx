@@ -41,6 +41,12 @@ const statusConfig = {
     pill: "border-yellow-500/30 bg-yellow-500/10 text-yellow-200",
     pulse: false,
   },
+  forfeit: {
+    label: "Forfeit",
+    dot: "bg-red-500",
+    pill: "border-red-500/30 bg-red-500/10 text-red-200",
+    pulse: false,
+  },
 };
 
 export function MatchCard({

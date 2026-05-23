@@ -23,6 +23,11 @@ export interface AdminSessionPayload {
 }
 
 export function makeAdminSession(discordId: string, role: "super_admin" | "admin") {
+  if (!process.env.ADMIN_SESSION_SECRET && process.env.NODE_ENV === "production") {
+    console.warn(
+      "[admin-auth] WARNING: ADMIN_SESSION_SECRET is not set. Sessions are signed with ADMIN_PASSWORD which may have low entropy. Set ADMIN_SESSION_SECRET to a long random string.",
+    );
+  }
   const payload = JSON.stringify({ discordId, role, exp: Date.now() + MAX_AGE_SECONDS * 1000 });
   const encoded = Buffer.from(payload).toString("base64url");
   return `${encoded}.${sign(encoded)}`;

@@ -27,6 +27,20 @@ const matchSchema = z.object({
   if (val.status !== "completed" && (val.homeScore !== undefined || val.awayScore !== undefined)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "scores may only be set when status is completed", path: ["homeScore"] });
   }
+  if (val.status === "scheduled") {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const matchDate = new Date(val.scheduledDate);
+    // Allow up to 1 day in the past to accommodate timezone edge cases
+    const oneDayAgo = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    if (matchDate < oneDayAgo) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "scheduledDate cannot be more than 1 day in the past for scheduled matches",
+        path: ["scheduledDate"],
+      });
+    }
+  }
 });
 
 export async function POST(request: NextRequest) {

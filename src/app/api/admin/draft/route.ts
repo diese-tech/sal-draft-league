@@ -23,6 +23,17 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const result = createSchema.safeParse(body);
   if (!result.success) return NextResponse.json({ error: result.error.issues.map((i) => i.message).join("; ") }, { status: 400 });
+  // Guard: prevent two active/pending rooms for the same division
+  const existingRooms = await getDraftRooms(result.data.seasonId);
+  const conflict = existingRooms.find(
+    (r) => r.divisionId === result.data.divisionId && (r.status === "active" || r.status === "pending")
+  );
+  if (conflict) {
+    return NextResponse.json(
+      { error: `A draft room for division "${result.data.divisionId}" is already ${conflict.status}. Complete or cancel it before creating another.` },
+      { status: 409 }
+    );
+  }
   try {
     const room = await createDraftRoom(result.data);
     await writeAuditLog("draft_room_created", "draft_room", result.data.id, { divisionId: result.data.divisionId, rounds: result.data.rounds });

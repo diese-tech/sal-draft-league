@@ -409,6 +409,38 @@ describe("recalcStandings()", () => {
     });
   });
 
+  describe("forfeit matches", () => {
+    it("forfeit winner gets W and loser gets L based on scores", () => {
+      const orgs = [makeOrg("winner"), makeOrg("loser")];
+      const match = { ...makeMatch("winner", "loser", 2, 0, "forfeit" as const) };
+      const result = recalcStandings({ orgs, matches: [match] });
+      const winner = result.find((s) => s.orgId === "winner")!;
+      const loser = result.find((s) => s.orgId === "loser")!;
+      expect(winner.wins).toBe(1);
+      expect(winner.losses).toBe(0);
+      expect(loser.wins).toBe(0);
+      expect(loser.losses).toBe(1);
+    });
+
+    it("forfeit increments matchesPlayed for both teams", () => {
+      const orgs = [makeOrg("winner"), makeOrg("loser")];
+      const match = { ...makeMatch("winner", "loser", 2, 0, "forfeit" as const) };
+      const result = recalcStandings({ orgs, matches: [match] });
+      const winner = result.find((s) => s.orgId === "winner")!;
+      const loser = result.find((s) => s.orgId === "loser")!;
+      expect(winner.matchesPlayed).toBe(1);
+      expect(loser.matchesPlayed).toBe(1);
+    });
+
+    it("forfeit adds W/L to streak", () => {
+      const orgs = [makeOrg("winner"), makeOrg("loser")];
+      const match = { ...makeMatch("winner", "loser", 2, 0, "forfeit" as const) };
+      const result = recalcStandings({ orgs, matches: [match] });
+      expect(result.find((s) => s.orgId === "winner")!.streak).toEqual(["W"]);
+      expect(result.find((s) => s.orgId === "loser")!.streak).toEqual(["L"]);
+    });
+  });
+
   describe("season filter (P0-06)", () => {
     it("includes all matches when no seasonId is passed", () => {
       const orgs = [makeOrg("a"), makeOrg("b")];

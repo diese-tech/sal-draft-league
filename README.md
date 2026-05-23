@@ -10,6 +10,55 @@ SAL is not affiliated with Hi-Rez Studios or the Smite franchise.
 
 ---
 
+## Development
+
+### Prerequisites
+
+- Node.js 20+
+- A Supabase project (see `.env.example`)
+
+### Setup
+
+```bash
+cp .env.example .env.local
+# Fill in your Supabase URL, anon key, and admin secrets
+npm install
+npm run dev
+```
+
+### Environment variables
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes (server) | Supabase service-role key for admin mutations |
+| `ADMIN_SESSION_SECRET` | Yes | Long random string used to sign admin session cookies |
+| `ADMIN_PASSWORD` | Optional | Password-based admin login fallback (used when Discord OAuth is not configured) |
+| `CAPTAIN_SESSION_SECRET` | Recommended | Separate signing key for captain session cookies; falls back to `ADMIN_SESSION_SECRET` |
+| `DISCORD_ADMIN_CLIENT_ID` | Optional | Discord OAuth app client ID for admin login |
+| `DISCORD_ADMIN_CLIENT_SECRET` | Optional | Discord OAuth app client secret |
+| `DISCORD_ADMIN_REDIRECT_URI` | Optional | Discord OAuth redirect URI |
+| `NEXT_PUBLIC_SITE_URL` | Yes | Full site URL (used for OAuth redirects) |
+
+### Testing
+
+```bash
+npm run test          # Unit tests (Vitest) — 103 tests
+npm run test:e2e      # E2E tests (Playwright) — requires ADMIN_PASSWORD set
+npm run test:integration  # RLS integration tests — requires Supabase credentials
+npm run test:load     # Load tests (Vitest in-process)
+```
+
+**CI pipeline** (`.github/workflows/ci.yml`) runs on every push and PR:
+- `lint-and-typecheck` — ESLint + `tsc --noEmit` + service-role exposure check
+- `unit-tests` — `npm run test`
+- `build` — `next build`
+- `e2e-tests` — Playwright suite
+- `integration-tests` — RLS integration tests (requires `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` secrets and Supabase API allowlist to include CI runner IPs)
+
+---
+
 ## What the Site Does
 
 The SAL website is the public hub for the league. It covers:

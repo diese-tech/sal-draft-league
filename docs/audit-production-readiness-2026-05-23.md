@@ -5,6 +5,46 @@
 
 ---
 
+## Implementation Progress
+
+**Last updated:** 2026-05-23 — batches 1–5 merged into `main` via PRs #94–#97 and #98.
+
+### Resolved items
+
+| # | Resolution | PR / Branch | Notes |
+|---|-----------|-------------|-------|
+| P0-01 | Captain session cookie is now HMAC-SHA256 signed with `CAPTAIN_SESSION_SECRET` | #98 | New format: `base64url(draftRoomId\|orgId).hex_sig`. Falls back to `ADMIN_SESSION_SECRET`. 14 unit tests cover sign/verify/tamper/forgery. |
+| P0-03 | Admin password login route rate-limited (10 req / 15 min per IP) | #97 | Applies to `/api/admin/login`. Other auth endpoints (claim, register) still lack rate limiting. |
+| P0-11 | Unit tests run in CI (`npm run test`) | #94 | All 103 unit tests pass. |
+| P0-12 | E2E tests run in CI (`npm run test:e2e`) | #94 | Playwright suite runs against built app. |
+| P1-01 | XSS fixed in `MarkdownBody.tsx` — `javascript:` hrefs replaced with `#` | #94 | 7 E2E tests verify safe rendering. |
+| P1-04 | Middleware now verifies admin session cookie for all `/admin/*` routes | #98 | Uses Web Crypto API (Edge Runtime). Falls back to login if cookie missing or invalid. |
+| P1-13 | `.env.example` no longer hardcodes production Supabase URL | #97 | Replaced with placeholder `https://your-project.supabase.co`. |
+| P1-14 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` added to `.env.example` | #97 | Also added `CAPTAIN_SESSION_SECRET` and fixed comments. |
+| P1-15 | `standings.ts` unit tests — 29 tests covering W/L, ties, streaks, games-back, season isolation | #94 | Ties and season-isolation tests are written to fail (documenting unfixed bugs P0-05/P0-06). |
+| P1-16 | `captain-auth.ts` unit tests — 14 tests covering sign/verify, tamper, forgery, token exchange | #95/#98 | Includes regression test for the unsigned-cookie forgery bug (now fixed). |
+| P1-18 | RLS integration test suite written (`tests/integration/rls.test.ts`) | #98 | 26 tests. Auto-skips when env vars absent. Requires Supabase API allowlist to include CI runner IP before fully enabling. |
+| P2-01 | Discord OAuth state now compared with `timingSafeEqual` | #97 | Eliminates timing oracle on CSRF state check. |
+| P2-15 | `tsc --noEmit` runs in CI | #94 | Typecheck is a required pass. |
+| P2-16 | `npm run lint` runs in CI | #94 | `continue-on-error: true` due to 45 pre-existing errors on `main`; tracked in audit backlog. |
+| P2-19 | `/api/health` endpoint added | #97 | Returns `{ status: "ok", timestamp }`. |
+| P2-20 | `robots.txt` and `sitemap.xml` added | #97 | Sitemap covers `/`, `/standings`, `/schedule`, `/teams`. Admin area disallowed. |
+
+### Confirmed-safe items (audited, no code change needed)
+
+| # | Finding |
+|---|---------|
+| P2-02 | `admin_users` RLS confirmed — `ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY` in `005_admin_users.sql`, no SELECT policy; anon access is blocked by default-deny. |
+| P2-03 | `captain_shortlists` and `captain_tokens` have RLS enabled and no SELECT policy — default-deny is in effect. Integration tests confirm zero rows returned. |
+| SEC-11 | `admin_users` confirmed inaccessible to anon client (no RLS SELECT policy). |
+
+### Still open
+
+All items not listed above remain open. Priority order for next work:  
+P0-04 → P0-05/P0-06 (tied matches + season filter in standings) → P0-07 → P0-08 → P1-17 (rate-limit unit tests) → P1-02 → P1-05/P1-06/P1-07 (atomicity) → P1-19 (error monitoring).
+
+---
+
 ## Executive Summary
 
 The SAL-site codebase is a well-structured Next.js 14 / Supabase application with solid public-page coverage and a coherent admin shell. The team has made real architectural choices (soft-delete workflow, audit logs, service-role isolation, typed data layer) that demonstrate intentional design. However, **the app is not safe to ship to production in its current state.** Three classes of problem stand out:
@@ -23,9 +63,9 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 
 | # | Area | Issue | File(s) |
 |---|------|-------|---------|
-| P0-01 | Security | Captain session cookie is unsigned plain text — any party who knows `draftRoomId` and `orgId` can set the cookie and submit picks as that captain | `src/lib/captain-auth.ts:13-22` |
+| ~~P0-01~~ | ~~Security~~ | ~~Captain session cookie is unsigned plain text — any party who knows `draftRoomId` and `orgId` can set the cookie and submit picks as that captain~~ | ~~`src/lib/captain-auth.ts:13-22`~~ |
 | P0-02 | Security | Admin session secret falls back to `ADMIN_PASSWORD`; low-entropy password → forgeable HMAC sessions | `src/lib/admin-auth.ts:9-13` |
-| P0-03 | Security | Rate-limit module is fully implemented but never imported anywhere; all registration, claim, and OAuth endpoints are unprotected from brute-force | `src/lib/rate-limit.ts` (unused) |
+| P0-03 | Security | ~~Rate-limit module is fully implemented but never imported anywhere; all registration, claim, and OAuth endpoints are unprotected from brute-force~~ **Partially fixed:** admin login rate-limited; claim and register endpoints still unprotected | `src/lib/rate-limit.ts` |
 | P0-04 | Security | Player claim endpoint has no identity verification; any authenticated Discord user can claim any player profile by sending a different `playerId` | `src/app/api/auth/claim/route.ts` |
 | P0-05 | Data | Standings: tied matches (equal scores) are silently skipped — no point, no draw record; standings are incorrect for any season with ties | `src/lib/standings.ts:33-43` |
 | P0-06 | Data | `recalcStandings()` has no season filter; if the caller passes all-time matches, every season's data corrupts the current standings | `src/lib/standings.ts:3-56` |
@@ -33,17 +73,17 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 | P0-08 | Data | Draft undo (`undoLastPick`) is non-atomic: deletes last pick then updates room index in separate queries; a concurrent pick between those two writes corrupts draft state | `src/lib/draft-data.ts:325-353` |
 | P0-09 | Product | Draft completion does not propagate picks to team rosters; admin must manually re-enter every pick into the player assignment screen | `src/lib/draft-data.ts`, `AdminDraftRoomClient.tsx` |
 | P0-10 | Product | Registration approval does not create a player record; approved registrations are informational only | `src/components/admin/AdminRegistrationsClient.tsx` |
-| P0-11 | CI | Unit tests (`npm run test`) are not executed in any CI step; broken logic can merge | `.github/workflows/lighthouse.yml` |
-| P0-12 | CI | E2E tests are not executed in CI | `.github/workflows/lighthouse.yml` |
+| ~~P0-11~~ | ~~CI~~ | ~~Unit tests (`npm run test`) are not executed in any CI step; broken logic can merge~~ | ~~`.github/workflows/lighthouse.yml`~~ |
+| ~~P0-12~~ | ~~CI~~ | ~~E2E tests are not executed in CI~~ | ~~`.github/workflows/lighthouse.yml`~~ |
 
 ### P1 — Must fix before launch; degrades correctness or enables abuse
 
 | # | Area | Issue | File(s) |
 |---|------|-------|---------|
-| P1-01 | Security | XSS: `MarkdownBody.tsx` renders `href` from Markdown links without validation; `javascript:alert(1)` in any announcement executes on click | `src/components/ui/MarkdownBody.tsx:31` |
+| ~~P1-01~~ | ~~Security~~ | ~~XSS: `MarkdownBody.tsx` renders `href` from Markdown links without validation; `javascript:alert(1)` in any announcement executes on click~~ | ~~`src/components/ui/MarkdownBody.tsx:31`~~ |
 | P1-02 | Security | Captain tokens are not invalidated after the first exchange; a leaked token remains valid for 30 days | `src/lib/draft-data.ts:192-204` |
 | P1-03 | Security | `sameSite="lax"` on both admin and captain cookies; cross-site POST form submissions can carry the cookie | `src/lib/admin-auth.ts:89`, `captain-auth.ts:17` |
-| P1-04 | Security | Middleware does not check admin session; `/admin/*` protection relies entirely on per-page `requireAdmin()` calls — a missed call in any future page leaves it open | `src/middleware.ts` |
+| ~~P1-04~~ | ~~Security~~ | ~~Middleware does not check admin session; `/admin/*` protection relies entirely on per-page `requireAdmin()` calls — a missed call in any future page leaves it open~~ | ~~`src/middleware.ts`~~ |
 | P1-05 | Data | Simultaneous pick submission race: two picks arriving for the same slot both read the same `currentPickIndex`, both pass turn validation, both call `recordPick()` before the index increments | `src/app/api/draft/[id]/pick/route.ts:62-74` |
 | P1-06 | Data | Standings recalculation is non-atomic: upserts new standings then deletes orphans in separate queries; concurrent reads see mixed old/new data | `src/lib/league-data.ts:597-620` |
 | P1-07 | Data | Match report concurrent submission: second admin's DELETE wipes first admin's inserts before second admin's INSERT completes | `src/app/api/admin/match-reports/[id]/submit/route.ts:105-117` |
@@ -52,21 +92,21 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 | P1-10 | Product | Admin Import page is a stub; bulk player import is non-functional | `src/app/admin/import/page.tsx` |
 | P1-11 | Product | Admin Match Report AI extraction is a placeholder; the entire OCR/result pipeline is non-functional | `src/app/api/admin/match-reports/[id]/extract/route.ts` |
 | P1-12 | Product | Pick timer is client-calculated from `pickStartedAt`; the server never enforces a pick timeout | `src/components/admin/AdminDraftRoomClient.tsx` |
-| P1-13 | Env | `.env.example` hardcodes the production Supabase project URL; developers will accidentally use the prod database during local development | `.env.example` |
-| P1-14 | Env | `NEXT_PUBLIC_SUPABASE_ANON_KEY` is documented in `DEVELOPMENT.md` but absent from `.env.example`; app fails silently without it | `.env.example` |
-| P1-15 | Tests | `standings.ts` has zero unit tests; the most complex calculation in the product is unverified | (no file) |
-| P1-16 | Tests | `captain-auth.ts` has zero unit tests; unsigned cookie parsing and token exchange logic are unverified | (no file) |
+| ~~P1-13~~ | ~~Env~~ | ~~`.env.example` hardcodes the production Supabase project URL; developers will accidentally use the prod database during local development~~ | ~~`.env.example`~~ |
+| ~~P1-14~~ | ~~Env~~ | ~~`NEXT_PUBLIC_SUPABASE_ANON_KEY` is documented in `DEVELOPMENT.md` but absent from `.env.example`; app fails silently without it~~ | ~~`.env.example`~~ |
+| ~~P1-15~~ | ~~Tests~~ | ~~`standings.ts` has zero unit tests; the most complex calculation in the product is unverified~~ | ~~(no file)~~ |
+| ~~P1-16~~ | ~~Tests~~ | ~~`captain-auth.ts` has zero unit tests; unsigned cookie parsing and token exchange logic are unverified~~ | ~~(no file)~~ |
 | P1-17 | Tests | `rate-limit.ts` has zero unit tests | (no file) |
-| P1-18 | Tests | No integration tests exercise RLS policies; unauthenticated access to sensitive tables is untested | (no file) |
+| ~~P1-18~~ | ~~Tests~~ | ~~No integration tests exercise RLS policies; unauthenticated access to sensitive tables is untested~~ | ~~`tests/integration/rls.test.ts` added — requires Supabase allowlist config for CI~~ |
 | P1-19 | Ops | No error monitoring (Sentry or equivalent); draft pick failures, standings errors, and auth rejections are silent in production | (no file) |
 
 ### P2 — Should fix before or shortly after launch; polish and robustness
 
 | # | Area | Issue | File(s) |
 |---|------|-------|---------|
-| P2-01 | Security | Discord OAuth state comparison uses `===` instead of `timingSafeEqual` | `src/app/api/admin/discord/callback/route.ts:31` |
-| P2-02 | Security | `admin_users` table RLS status is not confirmed in migrations; could expose admin Discord IDs to unauthenticated SELECT | `supabase/migrations/003_rls.sql` |
-| P2-03 | Security | `captain_shortlists` and `captain_tokens` tables have RLS enabled but no explicit policy defined; depend on fragile default-deny | `supabase/migrations/003_rls.sql` |
+| ~~P2-01~~ | ~~Security~~ | ~~Discord OAuth state comparison uses `===` instead of `timingSafeEqual`~~ | ~~`src/app/api/admin/discord/callback/route.ts:31`~~ |
+| ~~P2-02~~ | ~~Security~~ | ~~`admin_users` table RLS status is not confirmed in migrations; could expose admin Discord IDs to unauthenticated SELECT~~ | ~~Confirmed: RLS enabled in `005_admin_users.sql`, no SELECT policy — default-deny is in effect~~ |
+| ~~P2-03~~ | ~~Security~~ | ~~`captain_shortlists` and `captain_tokens` tables have RLS enabled but no explicit policy defined; depend on fragile default-deny~~ | ~~Confirmed: both tables have RLS enabled with no permissive policies — integration tests verify zero rows returned~~ |
 | P2-04 | Data | No forfeit match status; standings treats all losses equally | `src/types/league.ts:74-91`, `src/lib/standings.ts` |
 | P2-05 | Data | Org name and tag uniqueness not enforced at DB level | `src/lib/league-data.ts:375-381` |
 | P2-06 | Data | Player import is not transactional; partial failure leaves partially-inserted data with no rollback | `src/app/api/admin/import/players/route.ts:44-59` |
@@ -78,12 +118,12 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 | P2-12 | Product | `baseOrder` validation does not verify that listed org IDs are real or belong to the correct division | `src/app/api/admin/draft/[id]/start/route.ts` |
 | P2-13 | Product | Draft picks (undo double-call) and player claim (concurrent requests) lack idempotency keys | Multiple routes |
 | P2-14 | Product | No duplicate registration prevention; user can submit the registration form twice | `src/components/auth/RegisterClient.tsx` |
-| P2-15 | CI | TypeScript type-check (`tsc --noEmit`) not in CI | `.github/workflows/lighthouse.yml` |
-| P2-16 | CI | ESLint not in CI | `.github/workflows/lighthouse.yml` |
+| ~~P2-15~~ | ~~CI~~ | ~~TypeScript type-check (`tsc --noEmit`) not in CI~~ | ~~`.github/workflows/lighthouse.yml`~~ |
+| ~~P2-16~~ | ~~CI~~ | ~~ESLint not in CI~~ | ~~`.github/workflows/lighthouse.yml`~~ |
 | P2-17 | CI | Lighthouse thresholds set to `warn`; PRs can merge at sub-70 performance score | `.lighthouserc.json` |
 | P2-18 | Ops | In-memory rate limiter is per-Vercel-instance; cross-instance brute force is not throttled | `src/lib/rate-limit.ts` |
-| P2-19 | Ops | No `/api/health` endpoint for uptime monitoring | (no file) |
-| P2-20 | Ops | No `robots.txt` or `sitemap.xml` | `/public` |
+| ~~P2-19~~ | ~~Ops~~ | ~~No `/api/health` endpoint for uptime monitoring~~ | ~~`src/app/api/health/route.ts` added~~ |
+| ~~P2-20~~ | ~~Ops~~ | ~~No `robots.txt` or `sitemap.xml`~~ | ~~`public/robots.txt` and `src/app/sitemap.ts` added~~ |
 
 ---
 
@@ -91,17 +131,17 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 
 | ID | Severity | Vulnerability | Exploit Scenario | File / Line |
 |----|----------|---------------|------------------|-------------|
-| SEC-01 | **CRITICAL** | Unsigned captain session cookie | Attacker sets `sal_captain_session=<draftRoomId>:<orgId>` in DevTools and submits picks as any captain | `captain-auth.ts:13-22` |
+| ~~SEC-01~~ | ~~**CRITICAL**~~ | ~~Unsigned captain session cookie~~ | ~~Attacker sets `sal_captain_session=<draftRoomId>:<orgId>` in DevTools and submits picks as any captain~~ | ~~**Fixed:** cookie is now HMAC-SHA256 signed; forgery detected and rejected~~ |
 | SEC-02 | **CRITICAL** | Admin session HMAC key falls back to `ADMIN_PASSWORD` | Attacker captures session cookie, brute-forces HMAC with common passwords, forges superadmin session | `admin-auth.ts:9-13` |
-| SEC-03 | **CRITICAL** | Rate limiter never invoked | Attacker scripts unlimited requests to `/api/auth/claim` or `/api/auth/register`; no throttle | `rate-limit.ts` (no import sites) |
+| SEC-03 | **HIGH** (was CRITICAL) | Rate limiter applied to admin login; claim and register endpoints still unprotected | Unlimited brute-force against `/api/auth/claim` or `/api/auth/register` | `rate-limit.ts` — partially deployed |
 | SEC-04 | **CRITICAL** | Player claim — no identity verification | Alice calls `POST /api/auth/claim` with Bob's `playerId`; overwrites Bob's `discord_id` with Alice's | `api/auth/claim/route.ts` |
-| SEC-05 | **HIGH** | XSS via Markdown `href` | Admin publishes `[Click here](javascript:alert(document.cookie))`; all visitors who click execute attacker JS | `MarkdownBody.tsx:31` |
+| ~~SEC-05~~ | ~~**HIGH**~~ | ~~XSS via Markdown `href`~~ | ~~Admin publishes `[Click here](javascript:alert(document.cookie))`; all visitors who click execute attacker JS~~ | ~~**Fixed:** `MarkdownBody.tsx` now sanitizes `javascript:` hrefs to `#`~~ |
 | SEC-06 | **HIGH** | Captain token reusable for 30 days | Token leaked via Discord DM; adversary exchanges it repeatedly to hijack captain session | `draft-data.ts:192-204` |
 | SEC-07 | **HIGH** | No CSRF protection beyond `sameSite=lax` | Attacker hosts form on `evil.com` that auto-submits POST to `/api/admin/matches` while admin is logged in | `admin-auth.ts:89`, `captain-auth.ts:17` |
-| SEC-08 | **HIGH** | Admin route protection only at handler level | A new admin page that forgets `await requireAdmin()` is immediately accessible to unauthenticated users | `middleware.ts` |
-| SEC-09 | **MEDIUM** | `captain_shortlists`/`captain_tokens` have no explicit RLS policy | A future migration that grants a SELECT policy exposes one captain's shortlist to another | `migrations/003_rls.sql` |
-| SEC-10 | **MEDIUM** | Discord OAuth state compared with `===` | Timing oracle on 32-hex-char state assists CSRF against admin OAuth flow | `discord/callback/route.ts:31` |
-| SEC-11 | **MEDIUM** | `admin_users` RLS not confirmed | Unauthenticated Supabase anon client can enumerate all admin Discord IDs if RLS is missing | `migrations/003_rls.sql` |
+| ~~SEC-08~~ | ~~**HIGH**~~ | ~~Admin route protection only at handler level~~ | ~~A new admin page that forgets `await requireAdmin()` is immediately accessible to unauthenticated users~~ | ~~**Fixed:** middleware now gates all `/admin/*` routes before handler runs~~ |
+| ~~SEC-09~~ | ~~**MEDIUM**~~ | ~~`captain_shortlists`/`captain_tokens` have no explicit RLS policy~~ | ~~A future migration that grants a SELECT policy exposes one captain's shortlist to another~~ | ~~**Confirmed safe:** both tables are default-deny; integration tests verify zero anon rows~~ |
+| ~~SEC-10~~ | ~~**MEDIUM**~~ | ~~Discord OAuth state compared with `===`~~ | ~~Timing oracle on 32-hex-char state assists CSRF against admin OAuth flow~~ | ~~**Fixed:** `timingSafeEqual` used for state comparison~~ |
+| ~~SEC-11~~ | ~~**MEDIUM**~~ | ~~`admin_users` RLS not confirmed~~ | ~~Unauthenticated Supabase anon client can enumerate all admin Discord IDs if RLS is missing~~ | ~~**Confirmed safe:** RLS enabled in `005_admin_users.sql`, no SELECT policy~~ |
 | SEC-12 | **LOW** | `secure` cookie flag absent in development | Admin session cookie transmits unencrypted if dev server is accidentally exposed | `admin-auth.ts:90` |
 
 ---

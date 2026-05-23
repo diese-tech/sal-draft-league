@@ -188,3 +188,379 @@ The SAL-site codebase is a well-structured Next.js 14 / Supabase application wit
 ## Issues Filed
 
 See the GitHub Issues tab for the full list of 29 concrete issues derived from this audit, labeled by area and priority.
+
+---
+
+## Test Coverage Gap Analysis
+**Addendum date:** 2026-05-23  
+**Method:** Full read of every test file, CI workflow, package.json scripts, and corresponding source modules. Coverage claims cite specific file paths and line numbers. Nothing is assumed.
+
+---
+
+### 1. Existing Test Inventory
+
+#### Package.json test scripts
+
+| Script | Command | Runs in CI? |
+|--------|---------|-------------|
+| `test` | `vitest run` | ❌ No |
+| `test:load` | `vitest run tests/load` | ❌ No |
+| `test:e2e` | `playwright test` | ❌ No |
+| `lint` | `eslint` | ❌ No |
+| `build` | `next build` | ✅ Yes (lighthouse.yml) |
+
+**CI pipeline** (`.github/workflows/lighthouse.yml`): runs `npm run build` then `npx lhci autorun`. No test step of any kind. Zero test failures can block a merge.
+
+#### All test files
+
+| File | Type | Lines | Test blocks | Assessment |
+|------|------|-------|-------------|------------|
+| `src/lib/god-draft-rules.test.ts` | Unit | 218 | 16 | **Meaningful.** Covers phase config engine, state-machine timers, ban/pick vault deduplication, concurrent conflict detection, auth/chat authorization rules, OAuth redirect security. Pure-function tests; no mocks needed. |
+| `src/lib/stats-data.test.ts` | Unit | 331 | 14 | **Meaningful.** God aggregation, KDA with zero deaths, per-game pools, opponent derivation (home/away sides), season filter, division inclusion, mitigation null handling, multi-division roster averages, brand/league god stats, org tendencies. Uses a hand-rolled FakeQuery Supabase mock. |
+| `src/components/league/GodsPageClient.test.ts` | Unit | 39 | 2 | **Shallow.** Tests a single filter utility (`getQualifiedHighestWinRateStats`): excludes 100%-win-rate gods below minimum games, excludes 0-game gods. No component rendering, no data fetching. |
+| `tests/e2e/site.spec.ts` | E2E | 957 | ~95 | **Meaningful and wide.** Covers public routes, admin login/logout, unauthenticated redirect/rejection, CRUD workflows, Zod validation rejection, login rate-limit 429, announcements CRUD with confirmation, registrations page, form-fields page, import preview+send, draft list page, player profiles, captain badge, watch page offline state, mobile overflow. Runs against a real Next.js build with mocked env vars; hits the actual API routes. |
+| `tests/e2e/lab-editor.spec.ts` | E2E | 447 | ~40 | **Meaningful within scope.** Stress-tests the design lab configurator (sliders, toggles, selects, JSON import/export). Production-gated (`NODE_ENV=production` redirects away), so this suite is regression insurance for a dev tool, not a league-critical surface. |
+| `tests/e2e/canvas-clipping.spec.ts` | E2E | 695 | ~26 groups (~85 scenarios) | **Meaningful within scope.** Parameterized regression suite for org-roster card canvas geometry across roster sizes, team counts, viewport sizes, and view modes (spectator/captain/caster). Guards against layout overflow bugs. No data logic coverage. |
+| `tests/load/god-draft-load.test.ts` | Load | 147 | 6 | **Meaningful but uses in-process simulation.** Tests draft room load at 20 concurrent spectators (p95 <600 ms), realtime fanout at 210 subscribers (<500 ms), full-format draft throughput, concurrent ban conflict (one winner, no duplicates), chat throughput (50 messages/1 s), and pick timeout wipe (<1 s). Uses real `god-draft-rules.ts` logic but simulates database calls in-process — not a real Supabase load test. |
+| `tests/load/stats-load.test.ts` | Load | 144 | 6 | **Meaningful but mocked.** Tests player cold/warm cache (50 concurrent, 30 rows), god stats at 500 and 5,000 stat rows (p95 budgets), team roster (20 concurrent), and cache invalidation stampede (no 500s). Supabase client is mocked; tests aggregation-algorithm performance, not database I/O. |
+
+**Seed / fixtures:** `scripts/seed-supabase.mjs` — seeds seasons, divisions, orgs, players, matches, and standings from `MOCK_LEAGUE_DATA`. No captain tokens, no registrations, no draft rooms. Only covers the happy-path public data shape; no edge-case data (forfeits, ties, multi-season, archived orgs).
+
+**Mocks/fixtures:** `FakeQuery` in `stats-data.test.ts` (inline, not exported). No shared fixture factories. Each test file constructs its own minimal data inline.
+
+---
+
+### 2. Critical Missing Test Areas
+
+#### A. Auth / Security Tests
+
+| Scenario | Existing coverage | Gap | Severity |
+|----------|------------------|-----|----------|
+| Unauthenticated user cannot access admin pages | ✅ `site.spec.ts:122` — parameterized test verifies every `/admin/*` route redirects to `/admin/login` when no session | — | — |
+| Unauthenticated user cannot call admin mutation API routes | ✅ `site.spec.ts:254` and `site.spec.ts:808-814` — parameterized list of POST/PATCH/DELETE endpoints returns 401 without session | — | — |
+| Expired admin cookie is rejected | ❌ No test. `verifyAdminSession()` (`admin-auth.ts:30-50`) checks `exp <= Date.now()` but this path is never exercised in any test. | Unit test: craft a token with `exp` in the past, call `verifyAdminSession()`, assert returns null | P0 |
+| Tampered admin cookie is rejected | ❌ No test. `verifyAdminSession()` uses `timingSafeEqual` to compare HMAC signatures but this is untested. | Unit test: modify a valid token's payload byte, assert `verifyAdminSession()` returns null | P0 |
+| Normal Discord/player user cannot access admin | ✅ Implicitly covered — admin session is password-based, not Discord OAuth; Discord auth cannot produce an admin cookie | — | — |
+| Superadmin actions blocked for regular admins | ❌ No test. Several routes call `isSuperAdminRequest()` (`admin-auth.ts`) but no test verifies a regular-admin cookie is rejected by superadmin-only endpoints (e.g., `DELETE /api/admin/orgs/[id]`, `DELETE /api/admin/players/[id]`). | E2E or unit: log in as regular admin, call a superadmin-only route, assert 403 | P1 |
+| Admin login brute-force rate limit | ✅ `site.spec.ts:449` — verifies the 12th failed login attempt returns HTTP 429. **However:** the rate-limiter is in-memory and per-Vercel-instance; the test proves the mechanism works but not that it survives a distributed attack. | Integration test on real serverless: document the known limitation | P2 |
+| CSRF / origin protection on admin mutations | ❌ No test. Cookies use `sameSite="lax"`; no CSRF tokens exist. No test sends a cross-origin request to verify rejection. | Integration test: craft a cross-origin fetch to `/api/admin/matches` with a valid session cookie, assert behavior | P1 |
+| Supabase anon client cannot mutate protected tables | ❌ No integration test. RLS migration (`supabase/migrations/003_rls.sql`) defines policies but they are never exercised by any test. | Integration test suite against a test Supabase project | P0 |
+| Service-role client never imported into browser/client code | ✅ Audited manually — `supabase-server.ts` (service-role) is never imported by any file in `src/components/` or `src/app/*/page.tsx` client segments. No test enforces this. | Static-analysis check: `grep -r "supabase-server" src/components src/app` in CI to prevent future regressions | P2 |
+
+#### B. RLS and Data Exposure Tests
+
+All items in this section are **entirely absent** — there are no integration tests that exercise Supabase RLS policies against a real database instance.
+
+| Scenario | Severity | Recommended test type |
+|----------|----------|-----------------------|
+| Anon client: SELECT `orgs`, `players`, `matches`, `standings` → 200 | P0 | Integration (real Supabase test project) |
+| Anon client: INSERT `orgs` → error | P0 | Integration |
+| Anon client: SELECT `admin_audit_log` → error | P0 | Integration |
+| Anon client: SELECT `captain_tokens` → error | P0 | Integration |
+| Anon client: SELECT `registrations` → error | P0 | Integration |
+| Anon client: INSERT `registrations` → 200 | P0 | Integration |
+| Public player query does not include `discord_id`, `email`, or raw form_data | P1 | Integration — SELECT `players` with anon key; assert column set |
+| Registration data not exposed through `/api/admin/registrations` without admin session | ✅ `site.spec.ts:812` covers the route-level rejection | — |
+| Draft room public read does not expose `captain_tokens` rows | P1 | Integration — SELECT `captain_tokens` with anon key |
+| Service-role bypasses RLS for admin writes | P1 | Integration |
+
+#### C. Registration Workflow Tests
+
+| Scenario | Existing coverage | Gap | Severity |
+|----------|-----------------|-----|----------|
+| New player registration creates a pending registration | ✅ `site.spec.ts:524` — verifies register page redirects to sign-in when unauthenticated. The post-auth form submission flow is **not** tested end-to-end. | E2E: mock Discord OAuth, fill form, submit, assert pending registration row exists | P0 |
+| Duplicate registration is blocked | ❌ No test. `api/auth/register/route.ts` should check for existing `discord_id` but this is untested. | Unit/integration: submit registration twice with same Discord ID; assert second returns 409 or similar | P0 |
+| Existing player claim flow (Discord identity match) | ❌ No test. `api/auth/claim/route.ts` is untested at all levels. | Unit: call `claimPlayerProfile()` with matching discord_id; assert player row updated | P0 |
+| Claim on already-claimed profile is rejected | ❌ No test for the `profile_claimed = true` guard (if it exists). | Unit: attempt claim on player with `profile_claimed=true`; assert rejection | P0 |
+| Discord username collision / username changes | ❌ No test. Username-based matching is the fallback for the claim flow. | Unit: player matched by username; username later changes; assert existing discord_id takes precedence | P1 |
+| Rejected player resubmission behavior | ❌ No test. No documented behavior for `status='rejected'` re-registration. | Define behavior; add unit test | P1 |
+| Approved registration does not create duplicate player rows | ❌ No test. Approval currently does not create any player row, but once implemented this needs a guard. | Integration: approve registration twice; assert only one player row | P0 |
+| Admin approve/reject requires authorization | ✅ `site.spec.ts:812` — `PATCH /api/admin/registrations/reg-test` returns 401 without session | — |
+| Required/custom form fields validate correctly | ✅ Partially — `site.spec.ts:564` checks the form-fields admin page loads; no test submits a registration with a missing required field | E2E: submit registration with required custom field empty; assert validation error | P1 |
+| Malformed tracker/profile URL rejected or normalized | ❌ No test. `RegisterClient.tsx` has URL validation logic that is untested. | Unit: submit tracker URL without `https://`; assert normalization or error | P1 |
+| Very long / malicious text inputs handled safely | ❌ No test. Announcements body length is tested (`site.spec.ts:822`) but player IGN / bio / form fields are not. | Unit: submit IGN of 10,000 chars; assert truncation or rejection | P2 |
+
+#### D. Admin Workflow Tests
+
+| Scenario | Existing coverage | Gap | Severity |
+|----------|-----------------|-----|----------|
+| Admin can create/edit/delete or archive teams/orgs | ✅ `site.spec.ts:169`, `site.spec.ts:215` — match and player mutation payloads posted and response verified | Org-specific CRUD not tested separately | P2 |
+| Admin cannot assign player to two active teams in same season | ❌ No test. No server-side guard verified. | Unit/integration: assign player to org-A; attempt assign to org-B; assert error | P1 |
+| Captain status and starter status constraints enforced | ❌ No test. UI shows controls (`site.spec.ts:441`) but server-side constraint (one captain per org) is unverified. | Unit: set two players as captain for same org; assert second is rejected | P1 |
+| Admin cannot create a match with same team on both sides | ✅ `site.spec.ts:272` — `matches API rejects same home and away org` | — |
+| Admin cannot complete a match with missing score data | ✅ `site.spec.ts:312` — `matches API rejects completed status without scores` | — |
+| Score corrections update downstream standings | ❌ No test. E2E hits the update endpoint but does not verify the resulting standings rows. | E2E or integration: submit match score; call recalculate; query standings; assert values | P0 |
+| Admin destructive actions require confirmation | ✅ `site.spec.ts:636`, `site.spec.ts:655`, `site.spec.ts:407` — announcements delete confirmation, match save confirmation | — |
+| Every admin mutation writes to audit log | ❌ No test. `writeAuditLog()` is called in most routes but return value and log entry are never asserted in any test. | Integration: perform admin mutation; query `admin_audit_log`; assert entry exists with correct action/entity | P1 |
+| Admin cannot edit roster without corrupting season history | ❌ No test. No season-history concept is currently tested. | P2 |
+
+#### E. Draft Engine / State Machine Tests
+
+| Scenario | Existing coverage | Gap | Severity |
+|----------|-----------------|-----|----------|
+| Phase config and turn order | ✅ `god-draft-rules.test.ts:54-96` — 3-phase and 4-phase sequences fully tested | — |
+| Picks cannot happen during ban phase / bans during pick phase | ✅ `god-draft-rules.test.ts` — phase-type enforcement is implicit in `getDraftTurn()` | No explicit phase-mismatch rejection test | P1 |
+| Same god cannot be picked/banned twice | ✅ `god-draft-rules.test.ts:174-188` — same-session duplicate detection | — |
+| Same team cannot act out of turn | ✅ `god-draft-rules.test.ts:180-189` — concurrent submission conflict modeled | Unit tests only; no E2E or API-level test | P1 |
+| Spectators cannot mutate draft state | ✅ `god-draft-rules.test.ts:192-211` — `canRoleSubmitDraftAction()` tested for all roles | No API route test verifying the role check | P1 |
+| Captain token required, scoped, expires | ❌ No test for `verifyCaptainToken()` or the `/api/draft/[id]/token` exchange endpoint. | Unit: valid token → session granted; expired token → rejected; wrong draft ID → rejected | P0 |
+| Concurrent captain actions do not double-submit | ✅ `god-draft-load.test.ts:96-106` — concurrent ban conflict simulation (in-process) | No real DB-level concurrent write test | P1 |
+| Captain session cookie can be forged (unsigned) | ❌ No test. This is the critical P0 security bug — and there is no test documenting or catching it. | Unit: set cookie to arbitrary `draftRoomId:orgId`; attempt pick; assert rejected (will fail until bug fixed) | P0 |
+| Page reload / reconnect preserves draft state | ❌ No test. | E2E: submit ban, reload page, assert ban is still shown | P1 |
+| Draft completion locks final state | ❌ No test. No E2E or unit test for the post-completion state. | E2E: complete draft; attempt additional pick; assert rejection | P1 |
+| Draft reset/reopen is admin-only and audited | ❌ No test. `POST /api/draft/god/reset` is called in `god-draft-rules.test.ts` via action modeling but the route authorization is untested. | E2E: non-admin attempts reset; assert 401 | P1 |
+| Previously-used gods blocked across series games | ✅ `god-draft-rules.test.ts:155-172` — `getVaultedGods()` thoroughly tested across multi-game scenarios | — |
+| Draft room creation validates division, season, captains | ✅ `site.spec.ts:736-755` — draft page renders, form has division select, unknown room 404 | No validation of division/season FK integrity server-side | P1 |
+
+#### F. Standings and Schedule Tests
+
+| Scenario | Existing coverage | Gap | Severity |
+|----------|-----------------|-----|----------|
+| Standings recalc is deterministic | ❌ No unit test for `recalcStandings()` (`standings.ts:3-56`). Only tested via E2E against the API endpoint, which does not assert on resulting data values. | Unit: provide fixed match set; call `recalcStandings()`; assert exact W/L/points per org | P0 |
+| Incomplete/scheduled/postponed matches excluded | ❌ No unit test. Code skips `status !== 'completed'` but this is unverified. | Unit: include a `scheduled` match in input; assert it contributes zero points | P1 |
+| Forfeits handled per league rules | ❌ No test. No forfeit status exists yet. | Once forfeit status is added: unit test asserts winner gets W, loser gets L | P1 |
+| Tiebreakers implemented or explicitly absent | ❌ No tiebreaker logic exists; no test documents this absence. | Document explicit decision; add test once implemented | P2 |
+| Games-back calculation | ❌ No unit test. `gamesBack` math in `standings.ts:46-53` is untested. | Unit: leader 4-0, follower 2-2 → gamesBack=2 | P0 |
+| Streak calculation (last 5 only) | ❌ No unit test. Streak is computed in `standings.ts` but unverified. | Unit: org with 7 wins → streak array length 5 | P0 |
+| Tied matches handled | ❌ No unit test. Current code silently skips ties (P0 bug). | Unit: homeScore=awayScore → neither team gets a win (documents the bug) | P0 |
+| Division filters work | ✅ `site.spec.ts:75`, `site.spec.ts:84`, `site.spec.ts:93` — standings/schedule/teams division tab switches are exercised | No assertion on returned data set | P2 |
+| Season filters do not leak across seasons | ❌ No test. `recalcStandings()` has no season parameter. | Unit: two seasons' matches passed together → assert current season data only | P0 |
+| Schedule: no active season | ❌ No test. Mock data fallback is silent; no test verifies public pages render a clear empty state vs. fake data. | E2E (mocked env): set no active season; assert page shows empty state rather than mock data | P2 |
+| Schedule: cancelled/postponed match | ❌ No test. `status='postponed'` exists in types but its display behavior is untested. | E2E: seed a postponed match; visit schedule; assert it renders with correct label | P2 |
+
+#### G. Import Tests
+
+| Scenario | Existing coverage | Gap | Severity |
+|----------|-----------------|-----|----------|
+| CSV parser handles Google Sheets paste | ✅ `site.spec.ts:690-712` — valid CSV shows green preview rows; bad row (no role) shows red; batch send shows imported count | No test for TSV, quoted fields, BOM characters, Windows line endings | P1 |
+| Required fields validated | ✅ `site.spec.ts:701` — row with no role shows red | No test for missing IGN, missing ID | P1 |
+| Duplicate IGN rows update instead of duplicating | ❌ No test. Upsert-by-ID means two rows with different IDs but same IGN both insert silently. | Unit: import CSV with two rows sharing an IGN; assert error or intentional override | P0 |
+| Bad rows reported without committing partial data | ❌ No test. Import is not transactional; partial failure leaves orphaned rows. | Integration: import batch where row 3 of 5 is invalid; assert rows 1-2 are NOT committed (currently will fail — confirms the bug) | P0 |
+| Preview state matches committed result | ✅ `site.spec.ts:690` — preview shows expected row colors | No assertion that preview data exactly matches what API commits | P1 |
+| Large imports perform acceptably | ✅ `stats-load.test.ts` indirectly covers aggregation at scale but not import throughput | Load test: import 500-player CSV; assert completion under 5 s | P2 |
+| Import is admin-only and audited | ✅ Auth: `site.spec.ts:254` covers unauthenticated rejection. Audit: no test verifies audit log entry is written on import. | Integration: perform import; query `admin_audit_log`; assert entry | P1 |
+| Import rollback / recovery path | ❌ No test and no implementation. | Once transactional import is implemented: integration test verifying rollback | P1 |
+
+#### H. Public UI / E2E Tests
+
+| Scenario | Existing coverage | Gap | Severity |
+|----------|-----------------|-----|----------|
+| Home page renders with full data | ✅ `site.spec.ts:18` — public route rendering test | No assertion on actual data content (standings rows, match cards) | P2 |
+| Home page with no active season | ❌ No test. Mock fallback is silent. | E2E (mocked env with no season): assert empty state, not mock data | P2 |
+| Standings page: empty division | ❌ No test. | E2E: seed season with no teams in one division; visit standings; assert empty row/message | P2 |
+| Schedule filters: desktop and mobile | ✅ `site.spec.ts:84` — filter selectability checked; `site.spec.ts:28-34` — overflow check | No test that filter actually narrows the displayed match list | P1 |
+| Team page: missing roster/socials | ❌ No test. `site.spec.ts:113` checks team detail renders but seed always has players. | E2E: visit team with empty roster; assert graceful empty state | P2 |
+| Player profile: missing optional fields | ❌ No test. Player always has all fields in seed. | E2E: visit player with no stats, no org, no tracker; assert no crash | P1 |
+| Watch page: Twitch offline or missing config | ✅ `site.spec.ts:535` — renders without crashing; `site.spec.ts:924` — shows offline state when stream is down | — |
+| Announcement markdown renders safely | ✅ `site.spec.ts:618` — preview toggle renders markdown body | No test for `javascript:` href in link (the XSS vector) | P0 |
+| Mobile tables: no overflow | ✅ `site.spec.ts:28-34`, `site.spec.ts:245`, `site.spec.ts:500`, `site.spec.ts:937` — parameterized overflow checks at 390 px viewport | — |
+| Navigation without auth | ✅ `site.spec.ts:37` — all top nav links tested | — |
+| Error / loading / empty states | ✅ `site.spec.ts:265`, `site.spec.ts:506`, `site.spec.ts:427`, `site.spec.ts:482` — 404s and empty search states | No test for 500-class errors from Supabase | P1 |
+
+#### I. Performance / Load Tests
+
+| Area | Existing | Gap | Severity |
+|------|----------|-----|----------|
+| Draft spectator concurrent load | ✅ `god-draft-load.test.ts:64` — 20 concurrent at p95 <600 ms | In-process simulation only; no real network or DB I/O | P1 |
+| Realtime fanout (210 subscribers) | ✅ `god-draft-load.test.ts:75` — 210 subscribers at p95 <500 ms | In-process; Supabase Realtime latency not measured | P1 |
+| Full draft throughput (all picks) | ✅ `god-draft-load.test.ts:83` — current and extended formats complete under budget | — |
+| Player directory with large roster | ✅ `stats-load.test.ts:89` — 50 concurrent at 30 rows | 30 rows is a very small dataset; 300-player league is untested | P1 |
+| God stats at scale (5000 rows) | ✅ `stats-load.test.ts:117` — 5000 rows at p95 budget | Mocked DB; real Supabase query plan may differ | P1 |
+| Standings recalculation under load | ❌ No load test. `recalculateAndPersistStandings()` reads all orgs and all matches on every call; hot endpoint. | Load test: 10 concurrent POST to `/api/admin/recalculate-standings`; measure p95 and assert no 500s | P1 |
+| Admin import at scale | ❌ No load test. | Load test: import 500-row CSV; assert completes under 10 s | P2 |
+| Homepage load with full season data | ✅ Lighthouse CI at `/` (perf ≥70%) | Lighthouse uses a simulated network; no concurrent-user test | P2 |
+| All load tests use mocked Supabase | `god-draft-load.test.ts` and `stats-load.test.ts` both simulate database calls in-process. No load test exercises a real Supabase connection. | Configure a load test environment with a real test DB | P1 |
+
+#### J. CI / Release Gates
+
+| Check | Current status | Gap | Severity |
+|-------|---------------|-----|----------|
+| Lint (`npm run lint`) | ❌ Not in CI | Add as required check | P1 |
+| Build (`npm run build`) | ✅ Runs in `lighthouse.yml` | — |
+| TypeScript (`tsc --noEmit`) | ❌ Not in CI | Add as required check | P1 |
+| Unit tests (`npm run test`) | ❌ Not in CI | Add as required check; failures block merge | P0 |
+| E2E tests (`npm run test:e2e`) | ❌ Not in CI | Add as required check; requires test Supabase project | P0 |
+| Load tests (`npm run test:load`) | ❌ Not in CI | Add as optional gate (warn on regression) | P2 |
+| Lighthouse (perf/a11y/SEO) | ✅ Runs and reports | Thresholds are `warn` only; sub-70 perf does not block merge | P2 |
+| Branch protection rules | ❌ Unknown; no required status checks visible | Enable branch protection on `main`; require all CI checks | P0 |
+
+**Minimum release gate (must all be green before any production deploy):**
+```
+npm run lint
+tsc --noEmit
+npm run test           # unit + load
+npm run build
+npm run test:e2e       # requires seeded test Supabase
+npx lhci autorun       # with error-level thresholds
+```
+
+---
+
+### 3. Coverage Summary
+
+| Area | Rating | Basis |
+|------|--------|-------|
+| God draft state machine (pure logic) | 🟢 Green | 16 meaningful unit tests in `god-draft-rules.test.ts` |
+| Stats aggregation | 🟢 Green | 14 meaningful unit tests with full Supabase mock in `stats-data.test.ts` |
+| Public page rendering and nav | 🟢 Green | `site.spec.ts` parameterized across routes, viewports, filters |
+| Admin login / logout / route protection | 🟢 Green | `site.spec.ts:122,135` — redirect and session tested |
+| Unauthenticated API rejection | 🟢 Green | `site.spec.ts:254,808-814` — parameterized auth rejection |
+| Admin CRUD mutations (match/player/announcement) | 🟡 Yellow | Payload and happy-path tested; no error recovery, no audit-log assertion |
+| Login rate limiting | 🟡 Yellow | `site.spec.ts:449` proves mechanism; not a real distributed test |
+| Draft load / concurrent spectators | 🟡 Yellow | In-process simulation; no real DB or network |
+| Admin import (CSV) | 🟡 Yellow | Preview and batch send tested; rollback, deduplication, and large-import untested |
+| Standings calculation | 🔴 Red | Zero unit tests; correctness unverified for ties, streaks, games-back, season isolation |
+| Captain token exchange | 🔴 Red | No test at any level for `verifyCaptainToken()`, token expiry, or session cookie validation |
+| Admin session HMAC (tamper / expiry) | 🔴 Red | Crypto path in `admin-auth.ts:30-50` is completely untested |
+| RLS policies | 🔴 Red | No integration tests against a real Supabase instance |
+| Registration workflow (full flow) | 🔴 Red | Pre-auth redirect tested; post-OAuth form submit, duplicate prevention, and claim flow untested |
+| Superadmin vs regular admin distinction | 🔴 Red | Role separation in API routes is untested |
+| CSRF / cross-origin protection | 🔴 Red | No test verifies cross-site request behavior |
+| XSS via Markdown href | 🔴 Red | No test asserts `javascript:` links are blocked |
+| Season filter isolation in standings | 🔴 Red | `recalcStandings()` has no season parameter; cross-season contamination is untested |
+| CI gates | 🔴 Red | Only Lighthouse runs; unit and E2E tests not in CI pipeline |
+
+---
+
+### 4. Gap Tables
+
+#### Full coverage table
+
+| Area | Existing coverage | Missing coverage | Severity | Recommended type | Suggested file |
+|------|-----------------|-----------------|----------|-----------------|----------------|
+| Admin session expiry/tamper | None | `verifyAdminSession()` unit tests: expired token, bit-flipped payload | P0 | Unit | `src/lib/admin-auth.test.ts` |
+| Captain session forgery | None | Set unsigned cookie → pick rejected | P0 | Unit + E2E | `src/lib/captain-auth.test.ts` |
+| Captain token exchange | None | Valid/expired/wrong-draft token exchange | P0 | Unit | `src/lib/captain-auth.test.ts` |
+| RLS: anon cannot mutate | None | All protected tables via anon key | P0 | Integration | `tests/integration/rls.test.ts` |
+| Registration duplicate prevention | None | Same discord_id submitted twice → 409 | P0 | Unit + Integration | `tests/integration/registration.test.ts` |
+| Registration approval → player record | None | Approve twice → one player row | P0 | Integration | `tests/integration/registration.test.ts` |
+| Standings: basic W/L | None | 3 orgs, 2 matches → correct records | P0 | Unit | `src/lib/standings.test.ts` |
+| Standings: ties | None | homeScore=awayScore → no winner assigned | P0 | Unit | `src/lib/standings.test.ts` |
+| Standings: games-back | None | leader 4-0, follower 2-2 → gamesBack=2 | P0 | Unit | `src/lib/standings.test.ts` |
+| Standings: season isolation | None | Two seasons' matches → only current used | P0 | Unit | `src/lib/standings.test.ts` |
+| Standings: streak (last 5) | None | 7-win org → streak length 5 | P0 | Unit | `src/lib/standings.test.ts` |
+| Import: partial failure rollback | None | Row 3 invalid → rows 1-2 NOT committed | P0 | Integration | `tests/integration/import.test.ts` |
+| Import: duplicate IGN | None | Two rows same IGN → error reported | P0 | Unit | `tests/integration/import.test.ts` |
+| Score correction → standings update | None | Edit match score → recalc → assert standings row | P0 | Integration | `tests/integration/standings.test.ts` |
+| CI: unit tests in pipeline | None | Add `npm run test` step | P0 | CI config | `.github/workflows/ci.yml` |
+| CI: E2E tests in pipeline | None | Add `npm run test:e2e` step | P0 | CI config | `.github/workflows/ci.yml` |
+| Superadmin route restriction | None | Regular admin → superadmin endpoint → 403 | P1 | E2E | `tests/e2e/site.spec.ts` |
+| CSRF cross-origin request | None | Cross-origin POST to admin mutation → behavior documented | P1 | Integration | `tests/integration/security.test.ts` |
+| Captain pick during wrong turn | Modeled in unit test | API route-level rejection (real request) | P1 | E2E | `tests/e2e/draft.spec.ts` |
+| Draft completion locks state | None | Post-complete pick → rejected | P1 | E2E | `tests/e2e/draft.spec.ts` |
+| Draft reset is admin-only | None | Non-admin reset → 401 | P1 | E2E | `tests/e2e/draft.spec.ts` |
+| Audit log written on mutations | None | Admin action → `admin_audit_log` row exists | P1 | Integration | `tests/integration/audit.test.ts` |
+| Captain status: one per org | None | Second captain → rejected | P1 | Unit/Integration | `tests/integration/roster.test.ts` |
+| Standings: forfeit status | None | Forfeit match → winner W, loser L | P1 | Unit | `src/lib/standings.test.ts` |
+| Standings: postponed excluded | None | Postponed match → contributes zero | P1 | Unit | `src/lib/standings.test.ts` |
+| Rate limiter per-key isolation | None | Unit tests for `checkRateLimit()` | P1 | Unit | `src/lib/rate-limit.test.ts` |
+| Rate limiter window reset | None | Advance clock 901 s → counter resets | P1 | Unit | `src/lib/rate-limit.test.ts` |
+| Player profile: missing fields | None | Player with no org, no stats → no crash | P1 | E2E | `tests/e2e/site.spec.ts` |
+| Registration: rejected resubmission | None | Define behavior; add test | P1 | Unit | `tests/integration/registration.test.ts` |
+| Schedule filter narrows results | Selectability only | Filter actually reduces displayed matches | P1 | E2E | `tests/e2e/site.spec.ts` |
+| XSS: `javascript:` href in announcement | None | Markdown link with js: href → `#` rendered | P1 | E2E | `tests/e2e/site.spec.ts` |
+| Load: standings recalc under concurrent load | None | 10 concurrent POST → p95 + no 500s | P1 | Load | `tests/load/standings-load.test.ts` |
+| Load: import at scale (500 rows) | None | 500-row CSV → completes under 10 s | P2 | Load | `tests/load/import-load.test.ts` |
+| Home page with no active season | None | Empty state vs. mock data | P2 | E2E | `tests/e2e/site.spec.ts` |
+| Standings: empty division | None | Division with no teams → empty state | P2 | E2E | `tests/e2e/site.spec.ts` |
+| Service-role never in browser bundle | None | CI grep guard | P2 | Static analysis | `.github/workflows/ci.yml` |
+| Lighthouse thresholds error-level | Warn only | Bump to error to block merge on regression | P2 | CI config | `.lighthouserc.json` |
+
+---
+
+### 5. P0 Test Backlog (required before launch)
+
+Each item is a specific test case, not a feature. Test descriptions are precise enough to implement directly.
+
+1. **`admin-auth.test.ts`** — `verifyAdminSession()` returns null for a token with `exp` in the past.
+2. **`admin-auth.test.ts`** — `verifyAdminSession()` returns null when the final byte of the HMAC signature is changed.
+3. **`admin-auth.test.ts`** — `verifyAdminSession()` returns null for a token whose payload is valid JSON but signed with a different secret.
+4. **`captain-auth.test.ts`** — `getCaptainSession()` returns null for a cookie value without a colon separator.
+5. **`captain-auth.test.ts`** — `getCaptainSession()` returns null for a cookie value with an empty orgId part (`"draftRoomId:"`).
+6. **`captain-auth.test.ts`** — `verifyCaptainToken()` rejects a token whose `expires_at` is in the past.
+7. **`captain-auth.test.ts`** — `verifyCaptainToken()` rejects a token with the correct hash but the wrong `draft_room_id`.
+8. **`captain-auth.test.ts`** — Forging the captain session cookie (`draftRoomId:orgId` plaintext) allows a pick submission — this test is written to FAIL, documenting the unfixed vulnerability.
+9. **`standings.test.ts`** — `recalcStandings()` with 3 orgs and 4 completed matches produces exact W/L/pointsFor/pointsAgainst per org.
+10. **`standings.test.ts`** — `recalcStandings()` with `homeScore === awayScore` produces no win and no loss for either team (will fail until tie handling is implemented).
+11. **`standings.test.ts`** — `recalcStandings()` with a 7-win org produces a `recentResults` array of length 5 (last 5 only).
+12. **`standings.test.ts`** — Leader org 4-0, second org 2-2 in same division → second org has `gamesBack === 2`.
+13. **`standings.test.ts`** — Matches from two different seasons passed together → standings reflect only current season matches (will fail until season filter is added).
+14. **`standings.test.ts`** — A `status='scheduled'` match with scores present contributes zero points to standings.
+15. **`rls.test.ts`** — Supabase anon client INSERT into `orgs` returns a Postgres error.
+16. **`rls.test.ts`** — Supabase anon client SELECT from `admin_audit_log` returns zero rows or an error.
+17. **`rls.test.ts`** — Supabase anon client SELECT from `captain_tokens` returns zero rows or an error.
+18. **`rls.test.ts`** — Supabase anon client INSERT into `registrations` succeeds and row is readable via service-role.
+19. **`registration.test.ts`** — Submitting the registration form twice with the same Discord ID returns 409 (or equivalent) on the second attempt.
+20. **`registration.test.ts`** — Calling approve on a registration twice results in exactly one `players` row (once approval-to-player is implemented).
+21. **`import.test.ts`** — Importing a 5-row CSV where row 3 has an invalid role results in zero rows committed (rollback test; currently fails, documenting the bug).
+22. **`import.test.ts`** — Importing a CSV with two rows sharing the same IGN produces an error for the duplicate row.
+23. **`standings.test.ts (integration)`** — Admin edits match score; calls recalculate standings; resulting `standings` table row has updated wins and points.
+24. **`site.spec.ts`** — `POST /api/admin/orgs` with a valid admin session but non-superadmin role returns 403.
+25. **`site.spec.ts`** — Admin announcement body containing `[click](javascript:alert(1))` renders the link with `href="#"` not `href="javascript:..."`.
+26. **`ci.yml`** — Add `npm run test` step; verify it runs and fails the pipeline on a failing test (confirm by temporarily breaking one test).
+27. **`ci.yml`** — Add `npm run test:e2e` step with test Supabase secrets.
+
+---
+
+### 6. P1 Test Backlog (required before first full season)
+
+1. **`rate-limit.test.ts`** — 10 calls to `checkRateLimit('key')` are all allowed; the 11th is rejected with `allowed: false`.
+2. **`rate-limit.test.ts`** — After advancing the clock 901 seconds (via `vi.useFakeTimers()`), `checkRateLimit('key')` resets the window and allows again.
+3. **`rate-limit.test.ts`** — `clearRateLimit('key')` after 10 calls resets counter to 10 remaining.
+4. **`rate-limit.test.ts`** — Key A exhausted does not affect key B.
+5. **`standings.test.ts`** — A match with `status='postponed'` contributes zero points even if scores are present.
+6. **`standings.test.ts`** — A match with `status='forfeit'` (once implemented) awards a win to the non-forfeiting team and a loss to the forfeiting team.
+7. **`draft.spec.ts`** — Captain submits a pick; page is reloaded; the pick is still shown in the draft board.
+8. **`draft.spec.ts`** — After draft completes, a subsequent pick attempt returns an error.
+9. **`draft.spec.ts`** — Non-admin call to `POST /api/draft/god/reset` returns 401.
+10. **`draft.spec.ts`** — Captain acting out of turn (correct draft room, wrong org) receives a turn-order rejection.
+11. **`audit.test.ts`** — Admin calls `PATCH /api/admin/matches/[id]`; query `admin_audit_log`; assert an entry with `action='update_match'` exists.
+12. **`roster.test.ts`** — Setting two players as captain for the same org in the same season returns an error on the second.
+13. **`security.test.ts`** — Cross-origin POST to `POST /api/admin/matches` with a valid session cookie documents current `sameSite=lax` behavior.
+14. **`site.spec.ts`** — Schedule division filter: select "Solar" → only Solar-division matches remain visible.
+15. **`site.spec.ts`** — Player profile with no org assignment, no stats, and no tracker URL renders without crashing or throwing a JS error.
+16. **`site.spec.ts`** — Registration form with a required custom field left empty shows an inline validation error.
+17. **`site.spec.ts`** — Rejected registration: attempt to re-register shows the expected UI state (requires defining behavior first).
+18. **`standings-load.test.ts`** — 10 concurrent `POST /api/admin/recalculate-standings` requests: p95 < 2 s, no 500s.
+
+---
+
+### 7. P2 Test Backlog (polish / regression)
+
+1. **`site.spec.ts`** — Home page with no active season renders an explicit empty/coming-soon state, not the mock data set.
+2. **`site.spec.ts`** — Standings page with an empty division renders a "No teams yet" message, not a JS error.
+3. **`site.spec.ts`** — Team detail page with an empty roster renders "No players assigned."
+4. **`site.spec.ts`** — Import: player IGN over 50 characters is rejected with a validation error.
+5. **`ci.yml`** — Add `tsc --noEmit` as a required CI step.
+6. **`ci.yml`** — Add `npm run lint` as a required CI step.
+7. **`ci.yml`** — Add `grep -r "supabase-server" src/components src/app/*/page.tsx` to assert service-role client is never in browser code.
+8. **`.lighthouserc.json`** — Change performance, accessibility, and SEO thresholds from `warn` to `error` to block merges on regression.
+9. **`import-load.test.ts`** — 500-row CSV import completes under 10 s with no 500 errors.
+10. **`standings.test.ts`** — `gamesBack` is 0 for the leader of every division (not negative).
+11. **`standings.test.ts`** — Division with zero orgs produces an empty standings array without throwing.
+
+---
+
+### 8. Unit vs Integration vs E2E vs Load — Decision Guide
+
+| Test type | Use when | Examples |
+|-----------|----------|---------|
+| **Unit (Vitest)** | Testing pure functions or functions with injectable dependencies | `standings.ts`, `admin-auth.ts`, `rate-limit.ts`, `captain-auth.ts`, `god-draft-rules.ts` |
+| **Integration (Vitest + real Supabase test project)** | Testing that RLS policies, DB constraints, and multi-step transactions behave correctly | RLS policy suite, registration duplicate check, standings recalc correctness, audit log writing |
+| **E2E (Playwright)** | Testing full user journeys through the browser | Admin login flow, captain pick flow, announcement XSS check, registration form validation |
+| **Load (Vitest in-process)** | Testing algorithmic performance budgets | Draft state machine throughput, stats aggregation at scale |
+| **Load (real network)** | Testing endpoint throughput under concurrent requests | Standings recalculation, import at scale — these require a test environment with a real Supabase connection |
+
+---
+
+### 9. Testability Refactors Needed
+
+These are small code changes (not full rewrites) that would make the code significantly easier to test. No tests should be written until after these are in place for the affected modules.
+
+| Module | Problem | Refactor needed |
+|--------|---------|-----------------|
+| `src/lib/admin-auth.ts` | `requireAdmin()` and `isAdminRequest()` read cookies via `next/headers`, making them untestable without a full Next.js request context | Extract the core HMAC logic into a pure `verifyToken(token: string, secret: string): AdminSession \| null` function that takes a raw string rather than reading cookies. The cookie-reading wrapper then calls the pure function. Unit tests test the pure function. |
+| `src/lib/captain-auth.ts` | `getCaptainSession()` calls `cookies()` from `next/headers` | Same pattern: extract `parseSessionCookie(value: string): CaptainSession \| null`; test the pure parser. |
+| `src/lib/league-data.ts` | All functions create the Supabase client internally via `getSupabaseServerClient()`, making them hard to mock | Accept an optional `supabase` client parameter (defaulting to the real client). Tests inject a `FakeQuery`-style mock. This is the same pattern already used in `stats-data.ts`. |
+| `src/app/api/auth/claim/route.ts` | Route handler contains all logic inline | Extract the business logic (`resolveClaimRequest(discordId, playerId, supabase)`) into a testable pure-ish function in `league-data.ts`. The route handler becomes a thin wrapper. |
+| `src/lib/standings.ts` | Already pure — no refactor needed | Add a `seasonId` parameter so season filtering is internal rather than caller-responsibility. |

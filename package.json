@@ -7,6 +7,7 @@
     "test": "vitest run",
     "test:load": "vitest run tests/load",
     "test:e2e": "playwright test",
+    "test:integration": "vitest run tests/integration",
     "db:seed": "tsx scripts/seed-supabase.mjs"
   },
   "dependencies": {

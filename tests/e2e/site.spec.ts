@@ -955,3 +955,52 @@ async function adminLogin(page: Page) {
 async function hasHorizontalOverflow(page: Page) {
   return page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
 }
+
+// --- MarkdownBody XSS and link safety ---
+
+test.describe("MarkdownBody XSS and link safety", () => {
+  async function getPreviewLinkHref(page: Page, markdownLink: string): Promise<string | null> {
+    await adminLogin(page);
+    await page.goto("/admin/announcements");
+    await page.locator("textarea").fill(markdownLink);
+    await page.getByRole("button", { name: "Preview" }).click();
+    const anchor = page.locator("a").first();
+    await expect(anchor).toBeVisible();
+    return anchor.getAttribute("href");
+  }
+
+  test("javascript: href is neutralized to #", async ({ page }) => {
+    const href = await getPreviewLinkHref(page, "[click me](javascript:alert('xss'))");
+    expect(href).toBe("#");
+  });
+
+  test("data: href is neutralized to #", async ({ page }) => {
+    const href = await getPreviewLinkHref(page, "[click me](data:text/html,<script>alert(1)</script>)");
+    expect(href).toBe("#");
+  });
+
+  test("vbscript: href is neutralized to #", async ({ page }) => {
+    const href = await getPreviewLinkHref(page, "[click me](vbscript:MsgBox('xss'))");
+    expect(href).toBe("#");
+  });
+
+  test("https:// links pass through unchanged", async ({ page }) => {
+    const href = await getPreviewLinkHref(page, "[click me](https://example.com/path?q=1)");
+    expect(href).toBe("https://example.com/path?q=1");
+  });
+
+  test("http:// links pass through unchanged", async ({ page }) => {
+    const href = await getPreviewLinkHref(page, "[click me](http://example.com)");
+    expect(href).toBe("http://example.com");
+  });
+
+  test("relative / links pass through unchanged", async ({ page }) => {
+    const href = await getPreviewLinkHref(page, "[click me](/standings)");
+    expect(href).toBe("/standings");
+  });
+
+  test("bare domain with no protocol is neutralized to #", async ({ page }) => {
+    const href = await getPreviewLinkHref(page, "[click me](example.com)");
+    expect(href).toBe("#");
+  });
+});

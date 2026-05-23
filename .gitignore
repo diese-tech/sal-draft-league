@@ -27,3 +27,6 @@ pnpm-debug.log*
 # editor and OS
 .DS_Store
 *.pem
+
+# Claude Code local state
+.claude/

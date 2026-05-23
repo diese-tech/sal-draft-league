@@ -27,11 +27,19 @@ export function MarkdownBody({ body, className }: { body: string; className?: st
           blockquote: ({ children }) => (
             <blockquote className="my-3 border-l-2 border-cyan-300/40 pl-4 italic text-slate-400">{children}</blockquote>
           ),
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline underline-offset-2 hover:text-cyan-200">
-              {children}
-            </a>
-          ),
+          a: ({ href, children }) => {
+            const safeHref =
+              href?.startsWith("https://") ||
+              href?.startsWith("http://") ||
+              href?.startsWith("/")
+                ? href
+                : "#";
+            return (
+              <a href={safeHref} target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline underline-offset-2 hover:text-cyan-200">
+                {children}
+              </a>
+            );
+          },
           hr: () => <hr className="my-5 border-white/10" />,
           table: ({ children }) => (
             <div className="mb-3 overflow-x-auto">

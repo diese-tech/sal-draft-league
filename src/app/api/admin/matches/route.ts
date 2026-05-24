@@ -13,6 +13,7 @@ const matchSchema = z.object({
   scheduledTime: z.string().regex(/^\d{2}:\d{2}$/, "scheduledTime must be HH:MM"),
   status: z.enum(["scheduled", "live", "completed", "postponed", "forfeit"]),
   week: z.number().int().min(1),
+  seasonId: z.string().min(1).optional(),
   homeScore: z.number().int().min(0).optional(),
   awayScore: z.number().int().min(0).optional(),
   streamUrl: z.string().url().optional().or(z.literal("")),

@@ -178,6 +178,7 @@ function toDbMatch(match: Match): DbMatch {
     away_score: match.awayScore ?? null,
     stream_url: match.streamUrl ?? null,
     vod_url: match.vodUrl ?? null,
+    season_id: match.seasonId ?? null,
   };
 }
 

@@ -61,6 +61,7 @@ export function MatchCard({
   compact?: boolean;
 }) {
   const cfg = statusConfig[match.status];
+  const isFinished = match.status === "completed" || match.status === "forfeit";
 
   return (
     <article
@@ -98,7 +99,7 @@ export function MatchCard({
           </div>
 
           <div className="shrink-0 px-1">
-            {match.status === "completed" ? (
+            {isFinished ? (
               <span className={cn("font-mono font-black text-white", compact ? "text-lg" : "text-2xl")}>
                 {match.homeScore}
                 <span className="mx-1.5 text-slate-600">–</span>
@@ -115,9 +116,9 @@ export function MatchCard({
           </div>
         </div>
 
-        {(match.status !== "completed" || match.streamUrl || match.vodUrl) && (
+        {(!isFinished || match.streamUrl || match.vodUrl) && (
           <div className="mt-3 flex items-center gap-2 border-t border-white/8 pt-3">
-            {match.status !== "completed" && (
+            {!isFinished && (
               <Link href={`/draft/god/${match.id}`} className="rounded-lg border border-cyan-300/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-black uppercase text-cyan-100 transition hover:bg-cyan-400/15">
                 Start / Join / Watch Draft
               </Link>
